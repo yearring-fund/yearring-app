@@ -7,7 +7,7 @@ export const ADDR = {
   RewardToken:          '0xeAb54e7cFbE5d35ea5203854B44C8516201534A9' as Address,
   LockLedgerV02:        '0x2FC1d315c67AE3Df2a062f7130d58FaA6c0ce9EF' as Address,
   LockBenefitV02:       '0xeFcFc0Cdfd20786094D0f62297FF5C7B6358E481' as Address,
-  LockRewardManagerV02: '0xB1e6eC37113B4cF2608acFDf9A8f8Bf38ccBf633' as Address,
+  LockRewardManagerV02: '0x129aEce0C7659575Ae7aB4e78bfe4ca8946B962a' as Address,
   BeneficiaryModuleV02: '0x6d463f7d78Ca3a1809971D5A43E5F57066d325cF' as Address,
   UserStateEngineV02:   '0x19B09cee3534fA8fC631035e4Fe75e2C67e7637d' as Address,
   MetricsLayerV02:      '0x4937abE8e01dE6a081CF03b59151733E0Fde63E2' as Address,
