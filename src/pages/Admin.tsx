@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   useAccount,
   useReadContract,
@@ -226,11 +226,13 @@ function AdminConsole() {
     fn()
   }
 
-  // Track hash when it arrives
-  if (txHash && txHash !== actionHash) {
-    setActionHash(txHash)
-    refetch()
-  }
+  // Track hash when it arrives — moved into useEffect to avoid render-phase side effects
+  useEffect(() => {
+    if (txHash && txHash !== actionHash) {
+      setActionHash(txHash)
+      refetch()
+    }
+  }, [txHash])
 
   const isLoading = isPending || txPending
 
@@ -671,13 +673,16 @@ function AdminConsole() {
 
         {/* Open Exit Round — with vault free balance display */}
         {(() => {
+          // Issue #2: clamp to 0n — BigInt subtraction can go negative if data is transiently stale
           const vaultFreeUSDC = totalAssets !== undefined && totalManaged !== undefined
-            ? totalAssets - totalManaged
+            ? (totalAssets > totalManaged ? totalAssets - totalManaged : 0n)
             : undefined
           const parsedExitAmt = exitRoundAmt && Number(exitRoundAmt) > 0
             ? parseUnits(exitRoundAmt, 6)
             : 0n
           const overFree = vaultFreeUSDC !== undefined && parsedExitAmt > vaultFreeUSDC
+          // Issue #4: openExitModeRound requires EmergencyExit mode (contract reverts otherwise)
+          const notEmergencyMode = systemModeRaw !== undefined && systemModeRaw !== 2
           return (
             <div className="py-4 border-b border-outline-variant/40 last:border-0 space-y-3">
               <div className="flex flex-col sm:flex-row sm:items-start gap-3">
@@ -718,8 +723,9 @@ function AdminConsole() {
                       overFree ? 'border-error' : 'border-outline-variant'
                     }`}
                   />
+                  {/* Issue #3: add isLoading guard; Issue #4: disable when not in EmergencyExit */}
                   <button
-                    disabled={!exitRoundAmt || Number(exitRoundAmt) <= 0}
+                    disabled={isLoading || notEmergencyMode || !exitRoundAmt || Number(exitRoundAmt) <= 0}
                     onClick={() =>
                       send('openExitRound', () =>
                         writeContract({
@@ -736,6 +742,14 @@ function AdminConsole() {
                   </button>
                 </div>
               </div>
+              {/* Issue #4: explain why button is disabled when mode is wrong */}
+              {notEmergencyMode && (
+                <div className="flex items-center gap-2 text-xs bg-amber-50 border border-amber-200 text-amber-700 rounded-lg px-3 py-2">
+                  <span className="material-symbols-outlined text-sm">warning</span>
+                  Requires <strong className="mx-0.5">EmergencyExit</strong> mode — current mode is{' '}
+                  <strong className="ml-0.5">{systemModeLabel}</strong>. Set mode to EmergencyExit first.
+                </div>
+              )}
               {overFree && (
                 <div className="flex items-center gap-2 text-xs bg-error-container text-on-error-container rounded-lg px-3 py-2">
                   <span className="material-symbols-outlined text-sm">warning</span>
@@ -754,6 +768,7 @@ function AdminConsole() {
           description="Close the current exit round — no further claims allowed after this"
         >
           <button
+            disabled={isLoading}
             onClick={() =>
               send('closeExitRound', () =>
                 writeContract({

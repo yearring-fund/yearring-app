@@ -83,14 +83,14 @@
 ---
 
 ### P1-1 ✅ 完成
-**目标**：从链上实时读取 Aave V3 USDC 供给 APY，替代硬编码 "—"
+**目标**：从链上实时读取 Aave V3 USDC 供给 APR，替代硬编码 "—"
 
 **具体改法**：
-- `contracts.ts` 新增 `AAVE_V3_POOL_BASE = '0xA238Dd80C259a72e81d7e4664a9801593F98d1c5'` 和 `AAVE_POOL_ABI`（含 `getReserveData` 返回的完整 tuple）
+- `contracts.ts` 新增 `AAVE_V3_POOL_BASE = '0xA238Dd80C259a72e81d7e4664a9801593F98d1c5'` 和 `AAVE_POOL_ABI`（含 `getReserveData` 返回的完整 tuple，已含 `variableBorrowIndex` 字段）
 - `Vault.tsx` + `Dashboard.tsx` 均调用 `useReadContract` 读取 `getReserveData(USDC)`，取 `currentLiquidityRate`（Ray = 1e27，表示年化供给利率）
-- 计算公式：`APY% = (currentLiquidityRate / 1e27) * 100`，保留 2 位小数
-- Vault 页：StatCard "Current APY" 显示 live 值，sub 文字 "Aave V3 USDC supply rate"
-- Dashboard 页：Protocol Metrics 新增绿色 banner 展示 APY%，注明 "live from chain"
+- 计算公式：`APR% = (currentLiquidityRate / 1e27) * 100`（线性近似，非复利 APY），保留 2 位小数
+- Vault 页：StatCard "Current APR" 显示 live 值，sub 文字 "Aave V3 USDC supply rate (APR)"
+- Dashboard 页：Protocol Metrics 新增绿色 banner 展示 APR%，注明 "live from chain"
 
 ---
 
@@ -195,10 +195,10 @@
 
 ### P1-1 验收
 
-- 打开 `/vault` → 左侧 Stats 区 "Current APY" 卡片
+- 打开 `/vault` → 左侧 Stats 区 "Current APR" 卡片
 - 应显示具体百分比（如 `3.45%`），不显示 "—"
-- sub 文字：`Aave V3 USDC supply rate`
-- 打开 `/`（Dashboard）→ Protocol Metrics 区绿色 banner 应显示相同 APY 值
+- sub 文字：`Aave V3 USDC supply rate (APR)`
+- 打开 `/`（Dashboard）→ Protocol Metrics 区绿色 banner 应显示相同 APR 值
 
 ---
 

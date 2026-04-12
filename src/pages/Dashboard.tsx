@@ -165,7 +165,10 @@ export default function Dashboard() {
     if (!aaveReserveData) return undefined
     const rate = (aaveReserveData as { currentLiquidityRate: bigint }).currentLiquidityRate
     if (!rate) return undefined
-    return ((Number(rate) / 1e27) * 100).toFixed(2)
+    // rate is in Ray (1e27). Convert to basis points via BigInt to avoid Number precision loss
+    // (rate values like 5e25 exceed Number.MAX_SAFE_INTEGER ~9e15).
+    const bps = Number((rate * 10000n) / 1_000_000_000_000_000_000_000_000_000n)
+    return (bps / 100).toFixed(2)
   })()
 
   // ── PPS history accumulation ─────────────────────────────────────────────────
@@ -277,6 +280,12 @@ export default function Dashboard() {
               )}
               <p className="text-xs text-slate-400 mt-1.5 mb-2">USDC per fbUSDC</p>
               <Sparkline points={ppsHistory} />
+              <p className="flex items-center gap-1.5 mt-1">
+                <span className="inline-block bg-slate-100 text-slate-500 text-[10px] font-semibold px-1.5 py-0.5 rounded">
+                  Local data only
+                </span>
+                <span className="text-xs text-slate-500">Not protocol history</span>
+              </p>
             </div>
 
             {/* Card 3 — Strategy Deployed */}
@@ -338,7 +347,7 @@ export default function Dashboard() {
                 {systemMode === 0
                   ? 'Deposits & redeems open'
                   : systemMode === 1
-                  ? 'Operations paused'
+                  ? 'Deposits paused · Redeems open'
                   : systemMode === 2
                   ? 'Emergency mode active'
                   : 'Fetching status…'}
@@ -434,7 +443,7 @@ export default function Dashboard() {
                 </span>
                 <div>
                   <p className="text-xs text-emerald-700 font-semibold">
-                    Current Strategy APY (Aave V3):{' '}
+                    Current Strategy APR (Aave V3):{' '}
                     <span className="font-bold font-mono">
                       {aaveApyPct !== undefined ? `${aaveApyPct}%` : '—'}
                     </span>
@@ -560,7 +569,13 @@ export default function Dashboard() {
                 <div className="grid grid-cols-2 gap-3 pt-1">
                   <Link
                     to="/vault"
-                    className="flex items-center justify-center gap-1.5 bg-[#3755c3] hover:bg-[#2d47aa] text-white text-sm font-semibold rounded-xl py-2.5 transition-colors"
+                    title={systemMode !== undefined && systemMode !== 0 ? 'Deposits currently unavailable' : undefined}
+                    className={[
+                      'flex items-center justify-center gap-1.5 text-sm font-semibold rounded-xl py-2.5 transition-colors',
+                      systemMode !== undefined && systemMode !== 0
+                        ? 'bg-slate-200 text-slate-400 cursor-not-allowed pointer-events-none'
+                        : 'bg-[#3755c3] hover:bg-[#2d47aa] text-white',
+                    ].join(' ')}
                   >
                     <span className="material-symbols-outlined text-base">
                       add_circle
@@ -569,7 +584,13 @@ export default function Dashboard() {
                   </Link>
                   <Link
                     to="/vault"
-                    className="flex items-center justify-center gap-1.5 bg-white hover:bg-slate-50 text-[#3755c3] border border-[#3755c3] text-sm font-semibold rounded-xl py-2.5 transition-colors"
+                    title={systemMode === 2 ? 'Use Emergency Exit below' : undefined}
+                    className={[
+                      'flex items-center justify-center gap-1.5 text-sm font-semibold rounded-xl py-2.5 transition-colors',
+                      systemMode === 2
+                        ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed pointer-events-none'
+                        : 'bg-white hover:bg-slate-50 text-[#3755c3] border border-[#3755c3]',
+                    ].join(' ')}
                   >
                     <span className="material-symbols-outlined text-base">
                       remove_circle
