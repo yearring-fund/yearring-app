@@ -106,6 +106,19 @@ export const METRICS_ABI = parseAbi([
   'function snapshot() view returns ((uint256 totalTVL, uint256 totalLockedShares, uint256 lockedRatioBps, uint256 totalLocksEver))',
 ])
 
+export const GOVERNANCE_ABI = parseAbi([
+  'function nextProposalId() view returns (uint256)',
+  'function votingThreshold() view returns (uint256)',
+  'function votingPeriod() view returns (uint64)',
+  'function hasVoted(uint256 proposalId, address voter) view returns (bool)',
+  'function votingPowerOf(address voter) view returns (uint256)',
+  'function PROPOSER_ROLE() view returns (bytes32)',
+  'function hasRole(bytes32 role, address account) view returns (bool)',
+  'function getProposal(uint256 proposalId) view returns ((address proposer, string title, string description, uint8 proposalType, uint64 startTime, uint64 endTime, uint256 forVotes, uint256 againstVotes, uint256 abstainVotes, uint256 snapshotId))',
+  'function castVote(uint256 proposalId, uint8 voteType)',
+  'function createProposal(string title, string description, uint8 proposalType) returns (uint256)',
+])
+
 // ── System mode enum ──────────────────────────────────────────────────────────
 export const SystemMode = {
   0: 'Normal',

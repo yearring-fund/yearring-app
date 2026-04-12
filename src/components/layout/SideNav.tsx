@@ -13,10 +13,11 @@ type NavItem = {
 }
 
 const navItems: NavItem[] = [
-  { to: '/',           icon: 'dashboard',          label: 'Overview'    },
-  { to: '/vault',      icon: 'account_balance',    label: 'Vault'       },
-  { to: '/lock',       icon: 'lock',               label: 'Lock'        },
-  { to: '/beneficiary',icon: 'supervisor_account', label: 'Beneficiary' },
+  { to: '/',            icon: 'dashboard',          label: 'Overview'    },
+  { to: '/vault',       icon: 'account_balance',    label: 'Vault'       },
+  { to: '/lock',        icon: 'lock',               label: 'Lock'        },
+  { to: '/beneficiary', icon: 'supervisor_account', label: 'Beneficiary' },
+  { to: '/governance',  icon: 'how_to_vote',        label: 'Governance'  },
 ]
 
 // ── Shared nav content ────────────────────────────────────────────────────────
