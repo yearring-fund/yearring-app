@@ -254,25 +254,24 @@ function PositionsTable({
         </thead>
         <tbody>
           {displayIds.map((id, i) => {
-            // viem may return getLock result as flat OR double-nested:
-            //   flat:   [owner, shares, lockedAt, unlockAt, unlocked, earlyExited]
-            //   nested: [[owner, shares, lockedAt, unlockAt, unlocked, earlyExited]]
-            // Detect by checking if the first element is itself an array.
-            const rawResult = lockReads?.[i]?.result as unknown
-            if (!rawResult) return null
-            const rawArr: readonly [Address, bigint, bigint, bigint, boolean, boolean] =
-              Array.isArray((rawResult as unknown[])[0])
-                ? (rawResult as unknown[])[0] as readonly [Address, bigint, bigint, bigint, boolean, boolean]
-                : rawResult as readonly [Address, bigint, bigint, bigint, boolean, boolean]
+            const rawResult = lockReads?.[i]?.result
+            if (rawResult == null) return null
+
+            // viem v2 returns named tuple components as an object: { owner, shares, lockedAt, ... }
+            // Defensive: also support flat array form in case of viem version differences
+            const ro = rawResult as Record<string, unknown>
+            const ra = rawResult as unknown as readonly unknown[]
+            const pick = (name: string, idx: number): unknown =>
+              ro[name] !== undefined ? ro[name] : ra[idx]
 
             const lock: LockData = {
               lockId:      id,
-              owner:       rawArr[0],
-              shares:      typeof rawArr[1] === 'bigint' ? rawArr[1] : 0n,
-              lockedAt:    typeof rawArr[2] === 'bigint' ? rawArr[2] : 0n,
-              unlockAt:    typeof rawArr[3] === 'bigint' ? rawArr[3] : 0n,
-              unlocked:    rawArr[4] ?? false,
-              earlyExited: rawArr[5] ?? false,
+              owner:       pick('owner', 0) as Address,
+              shares:      typeof pick('shares', 1) === 'bigint' ? pick('shares', 1) as bigint : 0n,
+              lockedAt:    typeof pick('lockedAt', 2) === 'bigint' ? pick('lockedAt', 2) as bigint : 0n,
+              unlockAt:    typeof pick('unlockAt', 3) === 'bigint' ? pick('unlockAt', 3) as bigint : 0n,
+              unlocked:    (pick('unlocked', 4) as boolean) ?? false,
+              earlyExited: (pick('earlyExited', 5) as boolean) ?? false,
             }
 
             const tierId = (tierReads?.[i]?.result as number | undefined) ?? 0
@@ -280,15 +279,19 @@ function PositionsTable({
             const canUnlock    = !lock.unlocked && !lock.earlyExited && lock.unlockAt <= now
             const canEarlyExit = !lock.unlocked && !lock.earlyExited && lock.unlockAt > now
 
-            // checkEarlyExit returns: [rebateShares, tokensToReturn, treasuryShareBalance, treasuryShareAllowance, userTokenBalance, userTokenAllowance]
-            const eeArr = earlyExitReads?.[i]?.result as unknown as readonly [bigint, bigint, bigint, bigint, bigint, bigint] | undefined
-            const earlyExitInfo = eeArr ? {
-              rebateShares:           eeArr[0],  // fbUSDC auto-settled on exit
-              tokensToReturn:         eeArr[1],  // RWT user must return to treasury
-              treasuryShareBalance:   eeArr[2],
-              treasuryShareAllowance: eeArr[3],
-              userTokenBalance:       eeArr[4],
-              userTokenAllowance:     eeArr[5],
+            // checkEarlyExit: viem v2 returns named object or array — handle both
+            const eeRaw = earlyExitReads?.[i]?.result
+            const eeO = eeRaw as Record<string, unknown> | undefined
+            const eeA = eeRaw as unknown as readonly bigint[] | undefined
+            const eeP = (name: string, idx: number): bigint =>
+              eeO && eeO[name] !== undefined ? eeO[name] as bigint : (eeA?.[idx] ?? 0n)
+            const earlyExitInfo = eeRaw ? {
+              rebateShares:           eeP('rebateShares', 0),
+              tokensToReturn:         eeP('tokensToReturn', 1),
+              treasuryShareBalance:   eeP('treasuryShareBalance', 2),
+              treasuryShareAllowance: eeP('treasuryShareAllowance', 3),
+              userTokenBalance:       eeP('userTokenBalance', 4),
+              userTokenAllowance:     eeP('userTokenAllowance', 5),
             } : undefined
             // User needs to approve LockRewardManagerV02 to pull RWT before early exit
             const needsRwtApprove = canEarlyExit && earlyExitInfo != null &&
@@ -493,18 +496,18 @@ export default function Lock() {
   })
 
   const lockedShares: bigint = (allLockReads ?? []).reduce((sum, r) => {
-    const rawResult = r.result as unknown
-    if (!rawResult) return sum
-    // viem may return getLock as flat [owner,shares,...] or double-nested [[owner,shares,...]]
-    const arr: readonly [Address, bigint, bigint, bigint, boolean, boolean] =
-      Array.isArray((rawResult as unknown[])[0])
-        ? (rawResult as unknown[])[0] as readonly [Address, bigint, bigint, bigint, boolean, boolean]
-        : rawResult as readonly [Address, bigint, bigint, bigint, boolean, boolean]
-    const unlocked    = arr[4]
-    const earlyExited = arr[5]
+    const rawResult = r.result
+    if (rawResult == null) return sum
+    // viem v2: named tuple → object; fallback to array index
+    const ro = rawResult as Record<string, unknown>
+    const ra = rawResult as unknown as readonly unknown[]
+    const pick = (name: string, idx: number): unknown =>
+      ro[name] !== undefined ? ro[name] : ra[idx]
+    const unlocked    = pick('unlocked', 4) as boolean
+    const earlyExited = pick('earlyExited', 5) as boolean
     if (unlocked || earlyExited) return sum
-    const shares = typeof arr[1] === 'bigint' ? arr[1] : 0n
-    return sum + shares
+    const shares = pick('shares', 1)
+    return sum + (typeof shares === 'bigint' ? shares : 0n)
   }, 0n)
 
   const freeBalance = fbUsdcBalance > lockedShares ? fbUsdcBalance - lockedShares : 0n
