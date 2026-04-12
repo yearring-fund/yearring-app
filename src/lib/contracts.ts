@@ -101,7 +101,7 @@ export const LOCK_MGR_ABI = parseAbi([
   'function earlyExitWithReturn(uint256 lockId)',
   'function previewRebate(uint256 lockId) view returns (uint256)',
   'function issuedRewardTokens(uint256 lockId) view returns (uint256)',
-  'function checkEarlyExit(uint256 lockId) view returns (uint256 rwtToReturn, uint256 rebateForfeited, uint256 sharesToReturn, uint256 penaltyBps, uint256 lockedDays, uint256 remainingDays)',
+  'function checkEarlyExit(uint256 lockId) view returns (uint256 rebateShares, uint256 tokensToReturn, uint256 treasuryShareBalance, uint256 treasuryShareAllowance, uint256 userTokenBalance, uint256 userTokenAllowance)',
 ])
 
 export const BENEFICIARY_ABI = parseAbi([

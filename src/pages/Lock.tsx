@@ -13,6 +13,7 @@ import {
   LEDGER_ABI,
   LOCK_MGR_ABI,
   BENEFIT_ABI,
+  RWT_ABI,
 } from '../lib/contracts'
 import {
   formatShares,
@@ -194,12 +195,17 @@ function PositionsTable({
     useWriteContract()
   const { isSuccess: claimSuccess } = useWaitForTransactionReceipt({ hash: claimHash })
 
+  // Write: approve RWT to LockRewardManagerV02 (required before earlyExitWithReturn)
+  const { writeContract: writeApproveRwt, data: approveRwtHash, isPending: approveRwtPending, error: approveRwtError } =
+    useWriteContract()
+  const { isSuccess: approveRwtSuccess } = useWaitForTransactionReceipt({ hash: approveRwtHash })
+
   // Write: earlyExitWithReturn
   const { writeContract: writeEarlyExit, data: earlyExitHash, isPending: earlyExitPending, error: earlyExitError } =
     useWriteContract()
   const { isSuccess: earlyExitSuccess } = useWaitForTransactionReceipt({ hash: earlyExitHash })
 
-  const positionError = unlockError ?? claimError ?? earlyExitError
+  const positionError = unlockError ?? claimError ?? approveRwtError ?? earlyExitError
 
   // Refetch after any success
   useEffect(() => {
@@ -208,6 +214,11 @@ function PositionsTable({
       onRefetch()
     }
   }, [unlockSuccess, claimSuccess, earlyExitSuccess])
+
+  // Refetch early exit reads after RWT approval so allowance updates
+  useEffect(() => {
+    if (approveRwtSuccess) refetchLocks()
+  }, [approveRwtSuccess])
 
   if (displayIds.length === 0) {
     return (
@@ -269,16 +280,24 @@ function PositionsTable({
             const canUnlock    = !lock.unlocked && !lock.earlyExited && lock.unlockAt <= now
             const canEarlyExit = !lock.unlocked && !lock.earlyExited && lock.unlockAt > now
 
-            // checkEarlyExit returns: [rwtToReturn, rebateForfeited, sharesToReturn, penaltyBps, lockedDays, remainingDays]
+            // checkEarlyExit returns: [rebateShares, tokensToReturn, treasuryShareBalance, treasuryShareAllowance, userTokenBalance, userTokenAllowance]
             const eeArr = earlyExitReads?.[i]?.result as unknown as readonly [bigint, bigint, bigint, bigint, bigint, bigint] | undefined
             const earlyExitInfo = eeArr ? {
-              rwtToReturn:     eeArr[0],
-              rebateForfeited: eeArr[1],
-              sharesToReturn:  eeArr[2],
-              penaltyBps:      eeArr[3],
-              lockedDays:      eeArr[4],
-              remainingDays:   eeArr[5],
+              rebateShares:           eeArr[0],  // fbUSDC auto-settled on exit
+              tokensToReturn:         eeArr[1],  // RWT user must return to treasury
+              treasuryShareBalance:   eeArr[2],
+              treasuryShareAllowance: eeArr[3],
+              userTokenBalance:       eeArr[4],
+              userTokenAllowance:     eeArr[5],
             } : undefined
+            // User needs to approve LockRewardManagerV02 to pull RWT before early exit
+            const needsRwtApprove = canEarlyExit && earlyExitInfo != null &&
+              earlyExitInfo.tokensToReturn > 0n &&
+              earlyExitInfo.userTokenAllowance < earlyExitInfo.tokensToReturn
+            // Remaining lock days
+            const remainingDays = lock.unlockAt > now
+              ? Math.ceil(Number(lock.unlockAt - now) / 86400)
+              : 0
 
             return (
               <tr
@@ -301,7 +320,7 @@ function PositionsTable({
                   <TierChip tierId={tierId} />
                 </td>
                 <td className="py-3 px-3 text-on-surface text-xs font-medium">
-                  {formatRWT(rebate)} <span className="text-on-surface-variant">RWT</span>
+                  {formatShares(rebate)} <span className="text-on-surface-variant">fbUSDC</span>
                 </td>
                 <td className="py-3 px-3">
                   <StatusChip lock={lock} />
@@ -341,7 +360,24 @@ function PositionsTable({
                           Claim Rebate
                         </button>
                       )}
-                      {canEarlyExit && (
+                      {/* Early exit: approve RWT first if needed, then exit */}
+                      {canEarlyExit && needsRwtApprove && (
+                        <button
+                          disabled={approveRwtPending}
+                          onClick={() =>
+                            writeApproveRwt({
+                              address: ADDR.RewardToken as Address,
+                              abi: RWT_ABI,
+                              functionName: 'approve',
+                              args: [ADDR.LockRewardManagerV02 as Address, earlyExitInfo!.tokensToReturn],
+                            })
+                          }
+                          className="text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-warning-container text-on-warning-container hover:opacity-90 transition-colors disabled:opacity-50"
+                        >
+                          Approve RWT
+                        </button>
+                      )}
+                      {canEarlyExit && !needsRwtApprove && (
                         <button
                           disabled={earlyExitPending}
                           onClick={() =>
@@ -367,11 +403,12 @@ function PositionsTable({
                         <span className="text-xs text-on-surface-variant">—</span>
                       )}
                     </div>
-                    {/* Early exit penalty hint */}
-                    {canEarlyExit && earlyExitInfo && (
+                    {/* Early exit info hint */}
+                    {canEarlyExit && earlyExitInfo && earlyExitInfo.tokensToReturn > 0n && (
                       <p className="text-[10px] text-error/70 text-right leading-tight">
-                        Penalty {Number(earlyExitInfo.penaltyBps) / 100}% ·{' '}
-                        {earlyExitInfo.remainingDays.toString()}d remaining
+                        {needsRwtApprove ? 'Approve RWT first · ' : ''}
+                        Return {formatRWT(earlyExitInfo.tokensToReturn)} RWT ·{' '}
+                        {remainingDays}d remaining
                       </p>
                     )}
                   </div>
