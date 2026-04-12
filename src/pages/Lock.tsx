@@ -433,6 +433,25 @@ export default function Lock() {
 
   const lockIds = (lockIdsRaw as bigint[] | undefined) ?? []
 
+  // ── Batch read all lock data to compute truly free balance ─────────────────
+  const { data: allLockReads } = useReadContracts({
+    contracts: lockIds.map((id) => ({
+      address: ADDR.LockLedgerV02 as Address,
+      abi: LEDGER_ABI,
+      functionName: 'getLock',
+      args: [id],
+    })),
+    query: { enabled: lockIds.length > 0 },
+  })
+
+  const lockedShares: bigint = (allLockReads ?? []).reduce((sum, r) => {
+    const lock = r.result as LockData | undefined
+    if (lock && !lock.unlocked && !lock.earlyExited) return sum + lock.shares
+    return sum
+  }, 0n)
+
+  const freeBalance = fbUsdcBalance > lockedShares ? fbUsdcBalance - lockedShares : 0n
+
   // ── Write: approve vault shares to LockRewardManagerV02 ───────────────────
   const {
     writeContract: writeApprove,
@@ -485,7 +504,7 @@ export default function Lock() {
   } {
     if (!isConnected) return { label: 'Connect Wallet', disabled: true }
     if (!lockAmount || Number(lockAmount) <= 0) return { label: 'Enter Amount', disabled: true }
-    if (parsedLockAmount > fbUsdcBalance) return { label: 'Insufficient fbUSDC', disabled: true }
+    if (parsedLockAmount > freeBalance) return { label: 'Insufficient fbUSDC', disabled: true }
     if (approveInFlight) return { label: 'Approving…', disabled: true }
     if (lockInFlight) return { label: 'Locking…', disabled: true }
     if (needsApproval)
@@ -517,8 +536,8 @@ export default function Lock() {
   const lockBtn = getLockButtonProps()
 
   function handleMaxLock() {
-    if (fbUsdcBalance > 0n) {
-      setLockAmount(formatUnits(fbUsdcBalance, 18))
+    if (freeBalance > 0n) {
+      setLockAmount(formatUnits(freeBalance, 18))
     }
   }
 
@@ -628,7 +647,7 @@ export default function Lock() {
               Available to Lock
             </div>
             <span className="font-bold text-on-surface text-sm">
-              {isConnected ? `${formatShares(fbUsdcBalance)} fbUSDC` : '—'}
+              {isConnected ? `${formatShares(freeBalance)} fbUSDC` : '—'}
             </span>
           </div>
 
