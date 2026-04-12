@@ -232,11 +232,31 @@ function AdminConsole() {
     <div className="space-y-6 max-w-4xl">
 
       {/* Page header */}
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight text-on-surface">Admin Console</h1>
-        <p className="text-sm text-on-surface-variant mt-1">
-          Protocol management — FundVaultV01 &amp; StrategyManagerV01
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-on-surface">Admin Console</h1>
+          <p className="text-sm text-on-surface-variant mt-1">
+            Protocol management — FundVaultV01 &amp; StrategyManagerV01
+          </p>
+        </div>
+        <div className="flex flex-col items-end gap-1 shrink-0 mt-1">
+          {([
+            { label: 'FundVaultV01',      addr: ADDR.FundVaultV01      },
+            { label: 'StrategyManagerV01', addr: ADDR.StrategyManagerV01 },
+          ] as const).map(({ label, addr }) => (
+            <a
+              key={addr}
+              href={`https://basescan.org/address/${addr}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1 text-xs text-on-surface-variant hover:text-primary transition-colors"
+              title={`${label} on Basescan`}
+            >
+              <span className="font-mono">{addr.slice(0, 6)}…{addr.slice(-4)}</span>
+              <span className="material-symbols-outlined text-[14px]">open_in_new</span>
+            </a>
+          ))}
+        </div>
       </div>
 
       {/* Tx error */}

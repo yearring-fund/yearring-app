@@ -404,11 +404,23 @@ export default function Vault() {
   return (
     <div className="space-y-8">
       {/* Page header */}
-      <div>
-        <h2 className="text-2xl font-bold tracking-tight text-on-surface">Vault</h2>
-        <p className="text-on-surface-variant text-sm mt-1">
-          Deposit USDC to receive fbUSDC shares representing your fund allocation.
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight text-on-surface">Vault</h2>
+          <p className="text-on-surface-variant text-sm mt-1">
+            Deposit USDC to receive fbUSDC shares representing your fund allocation.
+          </p>
+        </div>
+        <a
+          href={`https://basescan.org/address/${ADDR.FundVaultV01}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-1 text-xs text-on-surface-variant hover:text-primary transition-colors shrink-0 mt-1"
+          title="FundVaultV01 on Basescan"
+        >
+          <span className="font-mono">{ADDR.FundVaultV01.slice(0, 6)}…{ADDR.FundVaultV01.slice(-4)}</span>
+          <span className="material-symbols-outlined text-[14px]">open_in_new</span>
+        </a>
       </div>
 
       {/* Two-column layout */}
