@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   useAccount,
   useReadContracts,
@@ -202,10 +202,12 @@ function PositionsTable({
   const positionError = unlockError ?? claimError ?? earlyExitError
 
   // Refetch after any success
-  if (unlockSuccess || claimSuccess || earlyExitSuccess) {
-    refetchLocks()
-    onRefetch()
-  }
+  useEffect(() => {
+    if (unlockSuccess || claimSuccess || earlyExitSuccess) {
+      refetchLocks()
+      onRefetch()
+    }
+  }, [unlockSuccess, claimSuccess, earlyExitSuccess])
 
   if (displayIds.length === 0) {
     return (
@@ -464,10 +466,12 @@ export default function Lock() {
   const { isLoading: approveConfirming, isSuccess: approveSuccess } =
     useWaitForTransactionReceipt({ hash: approveTxHash })
 
-  if (approveSuccess) {
-    refetchVaultReads()
-    resetApprove()
-  }
+  useEffect(() => {
+    if (approveSuccess) {
+      refetchVaultReads()
+      resetApprove()
+    }
+  }, [approveSuccess])
 
   // ── Write: lockWithReward ──────────────────────────────────────────────────
   const {
@@ -481,12 +485,14 @@ export default function Lock() {
   const { isLoading: lockConfirming, isSuccess: lockSuccess } =
     useWaitForTransactionReceipt({ hash: lockTxHash })
 
-  if (lockSuccess) {
-    refetchVaultReads()
-    refetchLockIds()
-    setLockAmount('')
-    resetLock()
-  }
+  useEffect(() => {
+    if (lockSuccess) {
+      refetchVaultReads()
+      refetchLockIds()
+      setLockAmount('')
+      resetLock()
+    }
+  }, [lockSuccess])
 
   // ── Derived ────────────────────────────────────────────────────────────────
   const needsApproval =

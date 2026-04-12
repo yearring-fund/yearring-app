@@ -6,7 +6,7 @@ import {
   useWriteContract,
   useWaitForTransactionReceipt,
 } from 'wagmi'
-import { parseUnits, isAddress, type Address } from 'viem'
+import { parseUnits, formatUnits, isAddress, type Address } from 'viem'
 import {
   ADDR,
   VAULT_ABI,
@@ -177,6 +177,12 @@ function AdminConsole() {
       { address: ADDR.StrategyManagerV01, abi: STRAT_MGR_ABI, functionName: 'totalManagedAssets' },
       { address: ADDR.StrategyManagerV01, abi: STRAT_MGR_ABI, functionName: 'idleUnderlying' },
       { address: ADDR.StrategyManagerV01, abi: STRAT_MGR_ABI, functionName: 'paused' },
+      // 9 — lockLedger
+      { address: ADDR.FundVaultV01, abi: VAULT_ABI, functionName: 'lockLedger' },
+      // 10 — externalTransfersEnabled
+      { address: ADDR.FundVaultV01, abi: VAULT_ABI, functionName: 'externalTransfersEnabled' },
+      // 11 — strategy address
+      { address: ADDR.StrategyManagerV01, abi: STRAT_MGR_ABI, functionName: 'strategy' },
     ],
   })
 
@@ -189,6 +195,9 @@ function AdminConsole() {
   const totalManaged     = data?.[6]?.result as bigint | undefined
   const idleUnderlying   = data?.[7]?.result as bigint | undefined
   const stratPaused      = data?.[8]?.result as boolean | undefined
+  const lockLedger       = data?.[9]?.result as string | undefined
+  const externalTransfersEnabled = data?.[10]?.result as boolean | undefined
+  const strategyAddr     = data?.[11]?.result as string | undefined
 
   const systemModeKey = (systemModeRaw ?? 0) as SystemModeKey
   const systemModeLabel = SystemMode[systemModeKey] ?? '—'
@@ -660,35 +669,82 @@ function AdminConsole() {
           <TxBanner hash={actionHash} isPending={txPending} isSuccess={txSuccess} />
         )}
 
-        <ActionRow
-          label="Open Exit Round"
-          description="Open a new exit round — specify USDC available for pro-rata claims (6 decimals)"
-        >
-          <input
-            type="number"
-            min="0"
-            placeholder="USDC amount (e.g. 10000)"
-            value={exitRoundAmt}
-            onChange={e => setExitRoundAmt(e.target.value)}
-            className="w-40 border border-outline-variant rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-          />
-          <button
-            disabled={!exitRoundAmt || Number(exitRoundAmt) <= 0}
-            onClick={() =>
-              send('openExitRound', () =>
-                writeContract({
-                  address: ADDR.FundVaultV01,
-                  abi: VAULT_ABI,
-                  functionName: 'openExitModeRound',
-                  args: [parseUnits(exitRoundAmt, 6)],
-                })
-              )
-            }
-            className="px-4 py-2 rounded-lg text-sm font-semibold bg-primary text-on-primary hover:opacity-90 disabled:opacity-40 transition-opacity"
-          >
-            Open Round
-          </button>
-        </ActionRow>
+        {/* Open Exit Round — with vault free balance display */}
+        {(() => {
+          const vaultFreeUSDC = totalAssets !== undefined && totalManaged !== undefined
+            ? totalAssets - totalManaged
+            : undefined
+          const parsedExitAmt = exitRoundAmt && Number(exitRoundAmt) > 0
+            ? parseUnits(exitRoundAmt, 6)
+            : 0n
+          const overFree = vaultFreeUSDC !== undefined && parsedExitAmt > vaultFreeUSDC
+          return (
+            <div className="py-4 border-b border-outline-variant/40 last:border-0 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-start gap-3">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-on-surface">Open Exit Round</p>
+                  <p className="text-xs text-on-surface-variant mt-0.5">
+                    Open a new exit round — specify USDC available for pro-rata claims
+                  </p>
+                  {vaultFreeUSDC !== undefined && (
+                    <div className="mt-2 inline-flex items-center gap-1.5 bg-surface-container rounded-lg px-3 py-1.5">
+                      <span className="material-symbols-outlined text-sm text-on-surface-variant">
+                        account_balance_wallet
+                      </span>
+                      <span className="text-xs text-on-surface-variant">
+                        Vault free USDC:{' '}
+                        <strong className="text-on-surface font-mono">
+                          ${formatUSDC(vaultFreeUSDC)}
+                        </strong>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setExitRoundAmt(formatUnits(vaultFreeUSDC, 6))}
+                        className="ml-1 text-xs font-bold text-primary bg-primary-fixed px-2 py-0.5 rounded-md hover:bg-primary hover:text-on-primary transition-colors"
+                      >
+                        MAX
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="USDC amount"
+                    value={exitRoundAmt}
+                    onChange={e => setExitRoundAmt(e.target.value)}
+                    className={`w-40 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary ${
+                      overFree ? 'border-error' : 'border-outline-variant'
+                    }`}
+                  />
+                  <button
+                    disabled={!exitRoundAmt || Number(exitRoundAmt) <= 0}
+                    onClick={() =>
+                      send('openExitRound', () =>
+                        writeContract({
+                          address: ADDR.FundVaultV01,
+                          abi: VAULT_ABI,
+                          functionName: 'openExitModeRound',
+                          args: [parseUnits(exitRoundAmt, 6)],
+                        })
+                      )
+                    }
+                    className="px-4 py-2 rounded-lg text-sm font-semibold bg-primary text-on-primary hover:opacity-90 disabled:opacity-40 transition-opacity"
+                  >
+                    Open Round
+                  </button>
+                </div>
+              </div>
+              {overFree && (
+                <div className="flex items-center gap-2 text-xs bg-error-container text-on-error-container rounded-lg px-3 py-2">
+                  <span className="material-symbols-outlined text-sm">warning</span>
+                  Amount exceeds vault free balance (${formatUSDC(vaultFreeUSDC!)}). Transaction will likely revert.
+                </div>
+              )}
+            </div>
+          )
+        })()}
         {lastAction === 'openExitRound' && (
           <TxBanner hash={actionHash} isPending={txPending} isSuccess={txSuccess} />
         )}
@@ -715,6 +771,112 @@ function AdminConsole() {
         {lastAction === 'closeExitRound' && (
           <TxBanner hash={actionHash} isPending={txPending} isSuccess={txSuccess} />
         )}
+      </Section>
+
+      {/* ── Pre-launch Verification ───────────────────────────────────────────── */}
+      <Section icon="checklist" title="Pre-launch Verification">
+        <div className="space-y-3">
+          <p className="text-xs text-on-surface-variant mb-4">
+            Verify critical on-chain parameters before opening the vault to users.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+
+            {/* lockLedger */}
+            <div className="bg-surface-container rounded-xl px-4 py-3">
+              <p className="text-xs text-on-surface-variant uppercase tracking-wider font-semibold mb-1.5">
+                Lock Ledger
+              </p>
+              {lockLedger === undefined ? (
+                <p className="text-sm font-mono text-on-surface-variant">Loading…</p>
+              ) : lockLedger === '0x0000000000000000000000000000000000000000' ? (
+                <div className="flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-sm text-amber-500">warning</span>
+                  <span className="text-sm font-semibold text-amber-600">Not set (zero address)</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-sm text-primary">check_circle</span>
+                  <a
+                    href={`https://basescan.org/address/${lockLedger}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs font-mono text-primary hover:underline"
+                  >
+                    {lockLedger.slice(0, 8)}…{lockLedger.slice(-6)}
+                  </a>
+                </div>
+              )}
+            </div>
+
+            {/* externalTransfersEnabled */}
+            <div className="bg-surface-container rounded-xl px-4 py-3">
+              <p className="text-xs text-on-surface-variant uppercase tracking-wider font-semibold mb-1.5">
+                External Transfers
+              </p>
+              {externalTransfersEnabled === undefined ? (
+                <p className="text-sm font-mono text-on-surface-variant">Loading…</p>
+              ) : externalTransfersEnabled ? (
+                <div className="flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-sm text-primary">check_circle</span>
+                  <span className="text-sm font-semibold text-primary">Enabled</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-sm text-amber-500">warning</span>
+                  <span className="text-sm font-semibold text-amber-600">Disabled — strategy invest blocked</span>
+                </div>
+              )}
+            </div>
+
+            {/* mgmtFeeBpsPerMonth */}
+            <div className="bg-surface-container rounded-xl px-4 py-3">
+              <p className="text-xs text-on-surface-variant uppercase tracking-wider font-semibold mb-1.5">
+                Mgmt Fee / Month
+              </p>
+              {mgmtFeeBps === undefined ? (
+                <p className="text-sm font-mono text-on-surface-variant">Loading…</p>
+              ) : mgmtFeeBps === 0n ? (
+                <div className="flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-sm text-amber-500">warning</span>
+                  <span className="text-sm font-semibold text-amber-600">0 bps — fee not configured</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-sm text-primary">check_circle</span>
+                  <span className="text-sm font-bold text-on-surface font-mono">{mgmtFeeBps.toString()} bps/mo</span>
+                </div>
+              )}
+            </div>
+
+            {/* strategy address */}
+            <div className="bg-surface-container rounded-xl px-4 py-3">
+              <p className="text-xs text-on-surface-variant uppercase tracking-wider font-semibold mb-1.5">
+                Active Strategy
+              </p>
+              {strategyAddr === undefined ? (
+                <p className="text-sm font-mono text-on-surface-variant">Loading…</p>
+              ) : strategyAddr === '0x0000000000000000000000000000000000000000' ? (
+                <div className="flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-sm text-amber-500">warning</span>
+                  <span className="text-sm font-semibold text-amber-600">No strategy set</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-sm text-primary">check_circle</span>
+                  <a
+                    href={`https://basescan.org/address/${strategyAddr}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs font-mono text-primary hover:underline"
+                  >
+                    {strategyAddr.slice(0, 8)}…{strategyAddr.slice(-6)}
+                  </a>
+                </div>
+              )}
+            </div>
+
+          </div>
+        </div>
       </Section>
 
     </div>

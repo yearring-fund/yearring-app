@@ -1,7 +1,49 @@
-import { useAccount, useReadContracts } from 'wagmi'
+import { useAccount, useReadContracts, useReadContract } from 'wagmi'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ADDR, VAULT_ABI, STRAT_MGR_ABI, USDC_ABI } from '../lib/contracts'
+import { type Address } from 'viem'
+import { ADDR, VAULT_ABI, STRAT_MGR_ABI, USDC_ABI, AAVE_POOL_ABI, AAVE_V3_POOL_BASE } from '../lib/contracts'
 import { formatUSDC, formatShares, formatPPS, bpsToPercent } from '../lib/format'
+
+// ── PPS sparkline helpers ─────────────────────────────────────────────────────
+const PPS_STORAGE_KEY = 'yearring_pps_history'
+const MAX_PPS_POINTS  = 30
+
+type PpsPoint = { t: number; v: number } // timestamp + PPS value in USDC (float)
+
+function loadPpsHistory(): PpsPoint[] {
+  try {
+    return JSON.parse(localStorage.getItem(PPS_STORAGE_KEY) ?? '[]')
+  } catch {
+    return []
+  }
+}
+
+function savePpsHistory(pts: PpsPoint[]) {
+  localStorage.setItem(PPS_STORAGE_KEY, JSON.stringify(pts.slice(-MAX_PPS_POINTS)))
+}
+
+function Sparkline({ points }: { points: PpsPoint[] }) {
+  if (points.length < 2) return (
+    <div className="text-xs text-slate-400 italic">Accumulating data…</div>
+  )
+  const W = 160, H = 40
+  const values = points.map(p => p.v)
+  const min = Math.min(...values)
+  const max = Math.max(...values)
+  const range = max - min || 1
+  const xs = points.map((_, i) => (i / (points.length - 1)) * W)
+  const ys = points.map(p => H - ((p.v - min) / range) * (H - 4) - 2)
+  const d = xs.map((x, i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${ys[i].toFixed(1)}`).join(' ')
+  const rising = values[values.length - 1] >= values[0]
+  const color = rising ? '#22c55e' : '#f59e0b'
+  return (
+    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="overflow-visible">
+      <path d={d} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx={xs[xs.length-1]} cy={ys[ys.length-1]} r="2.5" fill={color} />
+    </svg>
+  )
+}
 
 // ── System mode config ────────────────────────────────────────────────────────
 const SYSTEM_MODE_LABEL: Record<number, string> = {
@@ -28,6 +70,7 @@ const SYSTEM_MODE_STYLE: Record<number, { badge: string; card: string }> = {
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 export default function Dashboard() {
   const { address, isConnected } = useAccount()
+  const [ppsHistory, setPpsHistory] = useState<PpsPoint[]>(loadPpsHistory)
 
   // ── Contract reads ──────────────────────────────────────────────────────────
   const { data, isLoading } = useReadContracts({
@@ -110,6 +153,35 @@ export default function Dashboard() {
 
   const userSharesInUSDC = convertData?.[0]?.result as bigint | undefined
 
+  // ── Aave V3 supply APY ──────────────────────────────────────────────────────
+  const { data: aaveReserveData } = useReadContract({
+    address: AAVE_V3_POOL_BASE as Address,
+    abi: AAVE_POOL_ABI,
+    functionName: 'getReserveData',
+    args: [ADDR.USDC as Address],
+  })
+
+  const aaveApyPct: string | undefined = (() => {
+    if (!aaveReserveData) return undefined
+    const rate = (aaveReserveData as { currentLiquidityRate: bigint }).currentLiquidityRate
+    if (!rate) return undefined
+    return ((Number(rate) / 1e27) * 100).toFixed(2)
+  })()
+
+  // ── PPS history accumulation ─────────────────────────────────────────────────
+  useEffect(() => {
+    if (pricePerShare === undefined) return
+    const ppsFloat = Number(pricePerShare) / 1e6
+    const now = Date.now()
+    const hist = loadPpsHistory()
+    // Only record if at least 1 hour has passed since last point (or no points)
+    const last = hist[hist.length - 1]
+    if (last && now - last.t < 60 * 60 * 1000) return
+    const updated = [...hist, { t: now, v: ppsFloat }]
+    savePpsHistory(updated)
+    setPpsHistory(updated.slice(-MAX_PPS_POINTS))
+  }, [pricePerShare])
+
   // ── Derived metrics ─────────────────────────────────────────────────────────
   const systemMode = systemModeRaw !== undefined ? Number(systemModeRaw) : undefined
 
@@ -188,13 +260,13 @@ export default function Dashboard() {
               <p className="text-xs text-slate-400 mt-1.5">USDC · FundVaultV01</p>
             </div>
 
-            {/* Card 2 — Price Per Share */}
+            {/* Card 2 — Price Per Share + sparkline */}
             <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
               <div className="flex items-center gap-2 text-slate-400 text-xs font-semibold uppercase tracking-wider mb-3">
                 <span className="material-symbols-outlined text-base">
                   show_chart
                 </span>
-                Price Per Share
+                Price Per Share (PPS)
               </div>
               {isLoading ? (
                 <div className="h-8 w-36 bg-slate-100 rounded-lg animate-pulse" />
@@ -203,7 +275,8 @@ export default function Dashboard() {
                   ${fmt(pricePerShare, formatPPS)}
                 </p>
               )}
-              <p className="text-xs text-slate-400 mt-1.5">USDC per fbUSDC</p>
+              <p className="text-xs text-slate-400 mt-1.5 mb-2">USDC per fbUSDC</p>
+              <Sparkline points={ppsHistory} />
             </div>
 
             {/* Card 3 — Strategy Deployed */}
@@ -295,7 +368,7 @@ export default function Dashboard() {
               <div>
                 <div className="flex justify-between items-baseline mb-1.5">
                   <span className="text-sm text-slate-600 font-medium">
-                    Reserve Ratio (free / total)
+                    Current Free Reserve Ratio
                   </span>
                   <span className="text-sm font-bold text-[#1a1f36] font-mono">
                     {isLoading ? '--' : reservePct}
@@ -329,15 +402,45 @@ export default function Dashboard() {
                 </div>
               </div>
 
+              {/* Warning: reserveRatioBps at default 100% means strategy not configured */}
+              {!isLoading && reserveRatioBps === 10000n && (
+                <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5">
+                  <span className="material-symbols-outlined text-amber-600 text-base">
+                    warning
+                  </span>
+                  <p className="text-xs text-amber-700">
+                    <strong>Target Reserve is 100%</strong> — strategy deployment is disabled.
+                    Admin must set a lower target before investing.
+                  </p>
+                </div>
+              )}
               {/* Target reserve range info banner */}
-              <div className="flex items-center gap-2 bg-blue-50 border border-blue-100 rounded-xl px-4 py-2.5">
-                <span className="material-symbols-outlined text-[#3755c3] text-base">
-                  info
+              {(isLoading || reserveRatioBps !== 10000n) && (
+                <div className="flex items-center gap-2 bg-blue-50 border border-blue-100 rounded-xl px-4 py-2.5">
+                  <span className="material-symbols-outlined text-[#3755c3] text-base">
+                    info
+                  </span>
+                  <p className="text-xs text-blue-700">
+                    Target reserve range:{' '}
+                    <strong>15% – 35%</strong> of total assets kept liquid
+                  </p>
+                </div>
+              )}
+
+              {/* Aave APY tile */}
+              <div className="flex items-center gap-3 bg-emerald-50 border border-emerald-100 rounded-xl px-4 py-2.5">
+                <span className="material-symbols-outlined text-emerald-600 text-base">
+                  trending_up
                 </span>
-                <p className="text-xs text-blue-700">
-                  Target reserve range:{' '}
-                  <strong>15% – 35%</strong> of total assets kept liquid
-                </p>
+                <div>
+                  <p className="text-xs text-emerald-700 font-semibold">
+                    Current Strategy APY (Aave V3):{' '}
+                    <span className="font-bold font-mono">
+                      {aaveApyPct !== undefined ? `${aaveApyPct}%` : '—'}
+                    </span>
+                  </p>
+                  <p className="text-[10px] text-emerald-600/70 mt-0.5">USDC supply rate · live from chain</p>
+                </div>
               </div>
 
               {/* Fee & reserve parameter tiles */}

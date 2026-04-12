@@ -53,6 +53,9 @@ export const VAULT_ABI = parseAbi([
   'function mgmtFeeBpsPerMonth() view returns (uint256)',
   'function reserveRatioBps() view returns (uint256)',
   'function transferToStrategyManager(uint256 amount)',
+  'function lockLedger() view returns (address)',
+  'function externalTransfersEnabled() view returns (bool)',
+  'function treasury() view returns (address)',
   // Emergency exit round management
   'function currentRoundId() view returns (uint256)',
   'function exitRounds(uint256 roundId) view returns ((uint256 snapshotId, uint256 snapshotTotalSupply, uint256 availableAssets, uint256 totalClaimed, bool isOpen, uint256 snapshotTimestamp))',
@@ -70,6 +73,7 @@ export const STRAT_MGR_ABI = parseAbi([
   'function totalManagedAssets() view returns (uint256)',
   'function idleUnderlying() view returns (uint256)',
   'function paused() view returns (bool)',
+  'function strategy() view returns (address)',
 ])
 
 export const RWT_ABI = parseAbi([
@@ -124,6 +128,13 @@ export const GOVERNANCE_ABI = parseAbi([
   'function getProposal(uint256 proposalId) view returns ((address proposer, string title, string description, uint8 proposalType, uint64 startTime, uint64 endTime, uint256 forVotes, uint256 againstVotes, uint256 abstainVotes, uint256 snapshotId))',
   'function castVote(uint256 proposalId, uint8 voteType)',
   'function createProposal(string title, string description, uint8 proposalType) returns (uint256)',
+])
+
+// ── Aave V3 Pool (Base Mainnet) ────────────────────────────────────────────────
+export const AAVE_V3_POOL_BASE = '0xA238Dd80C259a72e81d7e4664a9801593F98d1c5' as Address
+
+export const AAVE_POOL_ABI = parseAbi([
+  'function getReserveData(address asset) view returns ((uint256 configuration, uint128 liquidityIndex, uint128 currentLiquidityRate, uint128 currentVariableBorrowRate, uint128 currentStableBorrowRate, uint40 lastUpdateTimestamp, uint16 id, address aTokenAddress, address stableDebtTokenAddress, address variableDebtTokenAddress, address interestRateStrategyAddress, uint128 accruedToTreasury, uint128 unbacked, uint128 isolationModeTotalDebt))',
 ])
 
 // ── System mode enum ──────────────────────────────────────────────────────────
