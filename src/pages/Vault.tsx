@@ -6,12 +6,199 @@ import {
   useWriteContract,
   useWaitForTransactionReceipt,
 } from 'wagmi'
-import { parseUnits, formatUnits,  type Address } from 'viem'
+import { parseUnits, formatUnits, type Address } from 'viem'
 import { ADDR, VAULT_ABI, USDC_ABI } from '../lib/contracts'
 import { formatUSDC, formatShares } from '../lib/format'
 import { parseTxError } from '../lib/txError'
 
 type Tab = 'deposit' | 'redeem'
+
+// ── Emergency Exit Panel ──────────────────────────────────────────────────────
+type ExitRound = {
+  snapshotId: bigint
+  snapshotTotalSupply: bigint
+  availableAssets: bigint
+  totalClaimed: bigint
+  isOpen: boolean
+  snapshotTimestamp: bigint
+}
+
+function EmergencyExitPanel({ userShares }: { userShares: bigint }) {
+  const { address } = useAccount()
+  const [burnAmount, setBurnAmount] = useState('')
+  const [txHash, setTxHash]   = useState<`0x${string}` | undefined>()
+  const [txError, setTxError] = useState('')
+
+  const { data: roundId, refetch: refetchRoundId } = useReadContract({
+    address: ADDR.FundVaultV01 as Address,
+    abi: VAULT_ABI,
+    functionName: 'currentRoundId',
+  })
+
+  const { data: roundData, refetch: refetchRound } = useReadContract({
+    address: ADDR.FundVaultV01 as Address,
+    abi: VAULT_ABI,
+    functionName: 'exitRounds',
+    args: [roundId as bigint],
+    query: { enabled: !!roundId && (roundId as bigint) > 0n },
+  })
+
+  const { data: alreadyClaimed, refetch: refetchClaimed } = useReadContract({
+    address: ADDR.FundVaultV01 as Address,
+    abi: VAULT_ABI,
+    functionName: 'roundSharesClaimed',
+    args: [roundId as bigint, address as Address],
+    query: { enabled: !!roundId && (roundId as bigint) > 0n && !!address },
+  })
+
+  const { writeContractAsync, isPending } = useWriteContract()
+  const { isLoading: isTxPending, isSuccess: isTxSuccess } =
+    useWaitForTransactionReceipt({ hash: txHash })
+
+  const round = roundData as ExitRound | undefined
+  const claimed = (alreadyClaimed as bigint | undefined) ?? 0n
+  const parsedBurn: bigint = (() => {
+    try { return burnAmount && Number(burnAmount) > 0 ? parseUnits(burnAmount, 18) : 0n }
+    catch { return 0n }
+  })()
+
+  // Estimated USDC out for this burn amount
+  const estimatedOut = round && round.snapshotTotalSupply > 0n
+    ? (parsedBurn * round.availableAssets) / round.snapshotTotalSupply
+    : 0n
+
+  const handleClaim = async () => {
+    if (!roundId || parsedBurn === 0n) return
+    setTxError('')
+    try {
+      const hash = await writeContractAsync({
+        address: ADDR.FundVaultV01 as Address,
+        abi: VAULT_ABI,
+        functionName: 'claimExitAssets',
+        args: [roundId as bigint, parsedBurn],
+      })
+      setTxHash(hash)
+      setBurnAmount('')
+      refetchRoundId()
+      refetchRound()
+      refetchClaimed()
+    } catch (e) {
+      setTxError(parseTxError(e))
+    }
+  }
+
+  const noRound = !roundId || (roundId as bigint) === 0n
+  const roundClosed = round && !round.isOpen
+
+  return (
+    <div className="border-2 border-error rounded-xl overflow-hidden">
+      {/* Header */}
+      <div className="bg-error px-5 py-3 flex items-center gap-2">
+        <span className="material-symbols-outlined text-on-error text-xl">emergency</span>
+        <span className="text-on-error font-bold text-sm tracking-wide uppercase">
+          Emergency Exit Mode
+        </span>
+      </div>
+
+      <div className="bg-error-container/30 px-5 py-4 space-y-4">
+        <p className="text-sm text-on-error-container leading-relaxed">
+          The protocol is in Emergency Exit mode. Normal deposits and redeems are disabled.
+          Burn your fbUSDC shares below to claim a pro-rata share of the available USDC.
+        </p>
+
+        {noRound ? (
+          <div className="bg-surface-container rounded-lg px-4 py-3 text-sm text-on-surface-variant">
+            No exit round has been opened yet. The admin must call{' '}
+            <code className="font-mono text-xs bg-surface-container-high px-1 rounded">openExitModeRound()</code>{' '}
+            first to make USDC available for claims.
+          </div>
+        ) : roundClosed ? (
+          <div className="bg-surface-container rounded-lg px-4 py-3 text-sm text-on-surface-variant">
+            Round #{(roundId as bigint).toString()} is closed. Wait for the admin to open a new round.
+          </div>
+        ) : round ? (
+          <div className="space-y-4">
+            {/* Round stats */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <div className="bg-surface-container-lowest rounded-lg px-3 py-2.5">
+                <p className="text-xs text-on-surface-variant mb-0.5">Round</p>
+                <p className="font-bold text-on-surface text-sm">#{(roundId as bigint).toString()}</p>
+              </div>
+              <div className="bg-surface-container-lowest rounded-lg px-3 py-2.5">
+                <p className="text-xs text-on-surface-variant mb-0.5">Available USDC</p>
+                <p className="font-bold text-on-surface text-sm">${formatUSDC(round.availableAssets)}</p>
+              </div>
+              <div className="bg-surface-container-lowest rounded-lg px-3 py-2.5">
+                <p className="text-xs text-on-surface-variant mb-0.5">Already Claimed (you)</p>
+                <p className="font-bold text-on-surface text-sm">{formatShares(claimed)} fbUSDC</p>
+              </div>
+            </div>
+
+            {/* Burn input */}
+            <div>
+              <label className="block text-xs font-semibold text-on-surface-variant mb-2 uppercase tracking-wider">
+                Shares to Burn (fbUSDC)
+              </label>
+              <div className="flex items-center gap-2 bg-surface-container-lowest rounded-xl px-4 py-3 border border-outline-variant/60 focus-within:border-error transition-colors">
+                <input
+                  type="number"
+                  min="0"
+                  placeholder="0.0000"
+                  value={burnAmount}
+                  onChange={e => setBurnAmount(e.target.value)}
+                  className="flex-1 bg-transparent text-on-surface text-lg font-semibold outline-none placeholder:text-on-surface-variant/40 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                />
+                <span className="text-on-surface-variant text-sm font-medium">fbUSDC</span>
+                <button
+                  onClick={() => userShares > 0n && setBurnAmount(formatUnits(userShares, 18))}
+                  className="text-xs font-bold text-error bg-error-container px-2 py-1 rounded-lg hover:bg-error hover:text-on-error transition-colors"
+                >
+                  MAX
+                </button>
+              </div>
+              {parsedBurn > 0n && estimatedOut > 0n && (
+                <p className="text-xs text-on-surface-variant mt-1.5">
+                  Estimated receive: <span className="font-semibold">${formatUSDC(estimatedOut)} USDC</span>
+                  <span className="ml-2 text-on-surface-variant/60">(pro-rata, before any rounding)</span>
+                </p>
+              )}
+            </div>
+
+            {/* Error */}
+            {txError && (
+              <div className="flex items-start gap-2 text-xs bg-error-container text-on-error-container rounded-xl px-3 py-2">
+                <span className="material-symbols-outlined text-sm shrink-0 mt-0.5">error</span>
+                <span>{txError}</span>
+              </div>
+            )}
+
+            {/* Tx hash */}
+            {txHash && (
+              <div className="flex items-center gap-2 text-xs bg-primary-fixed text-on-primary-container rounded-xl px-3 py-2">
+                <span className="material-symbols-outlined text-sm">
+                  {isTxPending ? 'progress_activity' : 'check_circle'}
+                </span>
+                {isTxSuccess ? 'Claimed successfully' : 'Confirming…'}
+                <a href={`https://basescan.org/tx/${txHash}`} target="_blank" rel="noreferrer" className="ml-auto underline">
+                  View
+                </a>
+              </div>
+            )}
+
+            {/* Claim button */}
+            <button
+              disabled={parsedBurn === 0n || parsedBurn > userShares || isPending}
+              onClick={handleClaim}
+              className="w-full py-3 rounded-xl text-sm font-bold bg-error text-on-error hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
+            >
+              {isPending ? 'Submitting…' : 'Claim Exit Assets'}
+            </button>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  )
+}
 
 // ── Step stepper ─────────────────────────────────────────────────────────────
 type StepStatus = 'idle' | 'active' | 'done'
@@ -371,6 +558,7 @@ export default function Vault() {
   // ── Deposit button state ────────────────────────────────────────────────────
   function getDepositButtonProps(): { label: string; disabled: boolean; onClick?: () => void; variant?: 'primary' | 'warn' } {
     if (!isConnected) return { label: 'Connect Wallet', disabled: true }
+    if (systemModeNum === 2) return { label: 'Emergency Mode — Deposits Closed', disabled: true, variant: 'warn' }
     if (!isAllowed) return { label: 'Not Allowlisted', disabled: true, variant: 'warn' }
     if (depositsPaused) return { label: 'Deposits Paused', disabled: true, variant: 'warn' }
     if (!amount || Number(amount) <= 0) return { label: 'Enter Amount', disabled: true }
@@ -383,6 +571,7 @@ export default function Vault() {
 
   function getRedeemButtonProps(): { label: string; disabled: boolean; onClick?: () => void; variant?: 'warn' } {
     if (!isConnected) return { label: 'Connect Wallet', disabled: true }
+    if (systemModeNum === 2) return { label: 'Emergency Mode — Use Claim Exit Below', disabled: true, variant: 'warn' }
     if (!isAllowed) return { label: 'Not Allowlisted', disabled: true, variant: 'warn' }
     if (redeemsPaused) return { label: 'Redeems Paused', disabled: true, variant: 'warn' }
     if (!amount || Number(amount) <= 0) return { label: 'Enter Amount', disabled: true }
@@ -762,6 +951,11 @@ export default function Vault() {
           </div>
         </div>
       </div>
+
+      {/* ── Emergency Exit Panel (only visible in EmergencyExit mode) ─────── */}
+      {systemModeNum === 2 && (
+        <EmergencyExitPanel userShares={fbUsdcBalance} />
+      )}
     </div>
   )
 }

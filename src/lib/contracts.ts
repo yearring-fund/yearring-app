@@ -53,6 +53,13 @@ export const VAULT_ABI = parseAbi([
   'function mgmtFeeBpsPerMonth() view returns (uint256)',
   'function reserveRatioBps() view returns (uint256)',
   'function transferToStrategyManager(uint256 amount)',
+  // Emergency exit round management
+  'function currentRoundId() view returns (uint256)',
+  'function exitRounds(uint256 roundId) view returns ((uint256 snapshotId, uint256 snapshotTotalSupply, uint256 availableAssets, uint256 totalClaimed, bool isOpen, uint256 snapshotTimestamp))',
+  'function roundSharesClaimed(uint256 roundId, address user) view returns (uint256)',
+  'function claimExitAssets(uint256 roundId, uint256 sharesToBurn)',
+  'function openExitModeRound(uint256 availableAssets)',
+  'function closeExitModeRound()',
 ])
 
 export const STRAT_MGR_ABI = parseAbi([

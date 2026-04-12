@@ -163,6 +163,7 @@ function AdminConsole() {
   const [newReserveRatio, setNewReserveRatio] = useState('')
   const [allowlistAddr, setAllowlistAddr] = useState('')
   const [newMode, setNewMode] = useState<'0' | '1' | '2'>('0')
+  const [exitRoundAmt, setExitRoundAmt] = useState('')
 
   // ── Read protocol state ─────────────────────────────────────────────────────
   const { data, refetch } = useReadContracts({
@@ -633,7 +634,7 @@ function AdminConsole() {
       {/* ── Emergency ─────────────────────────────────────────────────────────── */}
       <Section icon="emergency" title="Emergency">
         <ActionRow
-          label="Emergency Exit"
+          label="Emergency Exit (Strategy)"
           description="Trigger emergency exit on StrategyManagerV01 — irreversible"
         >
           <button
@@ -656,6 +657,62 @@ function AdminConsole() {
           </button>
         </ActionRow>
         {lastAction === 'emergencyExit' && (
+          <TxBanner hash={actionHash} isPending={txPending} isSuccess={txSuccess} />
+        )}
+
+        <ActionRow
+          label="Open Exit Round"
+          description="Open a new exit round — specify USDC available for pro-rata claims (6 decimals)"
+        >
+          <input
+            type="number"
+            min="0"
+            placeholder="USDC amount (e.g. 10000)"
+            value={exitRoundAmt}
+            onChange={e => setExitRoundAmt(e.target.value)}
+            className="w-40 border border-outline-variant rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+          />
+          <button
+            disabled={!exitRoundAmt || Number(exitRoundAmt) <= 0}
+            onClick={() =>
+              send('openExitRound', () =>
+                writeContract({
+                  address: ADDR.FundVaultV01,
+                  abi: VAULT_ABI,
+                  functionName: 'openExitModeRound',
+                  args: [parseUnits(exitRoundAmt, 6)],
+                })
+              )
+            }
+            className="px-4 py-2 rounded-lg text-sm font-semibold bg-primary text-on-primary hover:opacity-90 disabled:opacity-40 transition-opacity"
+          >
+            Open Round
+          </button>
+        </ActionRow>
+        {lastAction === 'openExitRound' && (
+          <TxBanner hash={actionHash} isPending={txPending} isSuccess={txSuccess} />
+        )}
+
+        <ActionRow
+          label="Close Exit Round"
+          description="Close the current exit round — no further claims allowed after this"
+        >
+          <button
+            onClick={() =>
+              send('closeExitRound', () =>
+                writeContract({
+                  address: ADDR.FundVaultV01,
+                  abi: VAULT_ABI,
+                  functionName: 'closeExitModeRound',
+                })
+              )
+            }
+            className="px-4 py-2 rounded-lg text-sm font-semibold bg-error-container text-on-error-container hover:bg-error hover:text-on-error disabled:opacity-40 transition-colors"
+          >
+            Close Round
+          </button>
+        </ActionRow>
+        {lastAction === 'closeExitRound' && (
           <TxBanner hash={actionHash} isPending={txPending} isSuccess={txSuccess} />
         )}
       </Section>
