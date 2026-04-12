@@ -114,7 +114,8 @@ function StatusChip({ lock }: { lock: LockData }) {
         Unlocked
       </span>
     )
-  if (lock.unlockAt <= now)
+  const unlockAt = typeof lock.unlockAt === 'bigint' ? lock.unlockAt : 0n
+  if (unlockAt <= now)
     return (
       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-primary-fixed text-on-primary-container">
         <span className="material-symbols-outlined text-sm">lock_open_right</span>
@@ -258,8 +259,9 @@ function PositionsTable({
 
             const tierId = (tierReads?.[i]?.result as number | undefined) ?? 0
             const rebate = (rebateReads?.[i]?.result as bigint | undefined) ?? 0n
-            const canUnlock = !lock.unlocked && !lock.earlyExited && lock.unlockAt <= now
-            const canEarlyExit = !lock.unlocked && !lock.earlyExited && lock.unlockAt > now
+            const unlockAt = typeof lock.unlockAt === 'bigint' ? lock.unlockAt : 0n
+            const canUnlock = !lock.unlocked && !lock.earlyExited && unlockAt <= now
+            const canEarlyExit = !lock.unlocked && !lock.earlyExited && unlockAt > now
 
             type EarlyExitResult = {
               rwtToReturn: bigint
@@ -448,8 +450,10 @@ export default function Lock() {
 
   const lockedShares: bigint = (allLockReads ?? []).reduce((sum, r) => {
     const lock = r.result as LockData | undefined
-    if (lock && !lock.unlocked && !lock.earlyExited) return sum + lock.shares
-    return sum
+    if (!lock) return sum
+    if (lock.unlocked || lock.earlyExited) return sum
+    const shares = typeof lock.shares === 'bigint' ? lock.shares : 0n
+    return sum + shares
   }, 0n)
 
   const freeBalance = fbUsdcBalance > lockedShares ? fbUsdcBalance - lockedShares : 0n
