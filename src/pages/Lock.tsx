@@ -114,8 +114,7 @@ function StatusChip({ lock }: { lock: LockData }) {
         Unlocked
       </span>
     )
-  const unlockAt = typeof lock.unlockAt === 'bigint' ? lock.unlockAt : 0n
-  if (unlockAt <= now)
+  if (lock.unlockAt <= now)
     return (
       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-primary-fixed text-on-primary-container">
         <span className="material-symbols-outlined text-sm">lock_open_right</span>
@@ -244,34 +243,36 @@ function PositionsTable({
         </thead>
         <tbody>
           {displayIds.map((id, i) => {
-            const raw = lockReads?.[i]?.result as LockData | undefined
-            if (!raw) return null
+            // viem returns tuple results as plain arrays (index access only, named props absent)
+            // getLock returns: [owner, shares, lockedAt, unlockAt, unlocked, earlyExited]
+            const rawArr = lockReads?.[i]?.result as unknown as readonly [Address, bigint, bigint, bigint, boolean, boolean] | undefined
+            if (!rawArr) return null
 
             const lock: LockData = {
-              lockId: id,
-              owner: raw.owner,
-              shares: raw.shares,
-              lockedAt: raw.lockedAt,
-              unlockAt: raw.unlockAt,
-              unlocked: raw.unlocked,
-              earlyExited: raw.earlyExited,
+              lockId:      id,
+              owner:       rawArr[0],
+              shares:      rawArr[1] ?? 0n,
+              lockedAt:    rawArr[2] ?? 0n,
+              unlockAt:    rawArr[3] ?? 0n,
+              unlocked:    rawArr[4] ?? false,
+              earlyExited: rawArr[5] ?? false,
             }
 
             const tierId = (tierReads?.[i]?.result as number | undefined) ?? 0
             const rebate = (rebateReads?.[i]?.result as bigint | undefined) ?? 0n
-            const unlockAt = typeof lock.unlockAt === 'bigint' ? lock.unlockAt : 0n
-            const canUnlock = !lock.unlocked && !lock.earlyExited && unlockAt <= now
-            const canEarlyExit = !lock.unlocked && !lock.earlyExited && unlockAt > now
+            const canUnlock    = !lock.unlocked && !lock.earlyExited && lock.unlockAt <= now
+            const canEarlyExit = !lock.unlocked && !lock.earlyExited && lock.unlockAt > now
 
-            type EarlyExitResult = {
-              rwtToReturn: bigint
-              rebateForfeited: bigint
-              sharesToReturn: bigint
-              penaltyBps: bigint
-              lockedDays: bigint
-              remainingDays: bigint
-            }
-            const earlyExitInfo = earlyExitReads?.[i]?.result as EarlyExitResult | undefined
+            // checkEarlyExit returns: [rwtToReturn, rebateForfeited, sharesToReturn, penaltyBps, lockedDays, remainingDays]
+            const eeArr = earlyExitReads?.[i]?.result as unknown as readonly [bigint, bigint, bigint, bigint, bigint, bigint] | undefined
+            const earlyExitInfo = eeArr ? {
+              rwtToReturn:     eeArr[0],
+              rebateForfeited: eeArr[1],
+              sharesToReturn:  eeArr[2],
+              penaltyBps:      eeArr[3],
+              lockedDays:      eeArr[4],
+              remainingDays:   eeArr[5],
+            } : undefined
 
             return (
               <tr
@@ -449,10 +450,13 @@ export default function Lock() {
   })
 
   const lockedShares: bigint = (allLockReads ?? []).reduce((sum, r) => {
-    const lock = r.result as LockData | undefined
-    if (!lock) return sum
-    if (lock.unlocked || lock.earlyExited) return sum
-    const shares = typeof lock.shares === 'bigint' ? lock.shares : 0n
+    // viem returns tuple as array: [owner, shares, lockedAt, unlockAt, unlocked, earlyExited]
+    const arr = r.result as unknown as readonly [Address, bigint, bigint, bigint, boolean, boolean] | undefined
+    if (!arr) return sum
+    const unlocked    = arr[4]
+    const earlyExited = arr[5]
+    if (unlocked || earlyExited) return sum
+    const shares = typeof arr[1] === 'bigint' ? arr[1] : 0n
     return sum + shares
   }, 0n)
 
