@@ -243,17 +243,23 @@ function PositionsTable({
         </thead>
         <tbody>
           {displayIds.map((id, i) => {
-            // viem returns tuple results as plain arrays (index access only, named props absent)
-            // getLock returns: [owner, shares, lockedAt, unlockAt, unlocked, earlyExited]
-            const rawArr = lockReads?.[i]?.result as unknown as readonly [Address, bigint, bigint, bigint, boolean, boolean] | undefined
-            if (!rawArr) return null
+            // viem may return getLock result as flat OR double-nested:
+            //   flat:   [owner, shares, lockedAt, unlockAt, unlocked, earlyExited]
+            //   nested: [[owner, shares, lockedAt, unlockAt, unlocked, earlyExited]]
+            // Detect by checking if the first element is itself an array.
+            const rawResult = lockReads?.[i]?.result as unknown
+            if (!rawResult) return null
+            const rawArr: readonly [Address, bigint, bigint, bigint, boolean, boolean] =
+              Array.isArray((rawResult as unknown[])[0])
+                ? (rawResult as unknown[])[0] as readonly [Address, bigint, bigint, bigint, boolean, boolean]
+                : rawResult as readonly [Address, bigint, bigint, bigint, boolean, boolean]
 
             const lock: LockData = {
               lockId:      id,
               owner:       rawArr[0],
-              shares:      rawArr[1] ?? 0n,
-              lockedAt:    rawArr[2] ?? 0n,
-              unlockAt:    rawArr[3] ?? 0n,
+              shares:      typeof rawArr[1] === 'bigint' ? rawArr[1] : 0n,
+              lockedAt:    typeof rawArr[2] === 'bigint' ? rawArr[2] : 0n,
+              unlockAt:    typeof rawArr[3] === 'bigint' ? rawArr[3] : 0n,
               unlocked:    rawArr[4] ?? false,
               earlyExited: rawArr[5] ?? false,
             }
@@ -450,9 +456,13 @@ export default function Lock() {
   })
 
   const lockedShares: bigint = (allLockReads ?? []).reduce((sum, r) => {
-    // viem returns tuple as array: [owner, shares, lockedAt, unlockAt, unlocked, earlyExited]
-    const arr = r.result as unknown as readonly [Address, bigint, bigint, bigint, boolean, boolean] | undefined
-    if (!arr) return sum
+    const rawResult = r.result as unknown
+    if (!rawResult) return sum
+    // viem may return getLock as flat [owner,shares,...] or double-nested [[owner,shares,...]]
+    const arr: readonly [Address, bigint, bigint, bigint, boolean, boolean] =
+      Array.isArray((rawResult as unknown[])[0])
+        ? (rawResult as unknown[])[0] as readonly [Address, bigint, bigint, bigint, boolean, boolean]
+        : rawResult as readonly [Address, bigint, bigint, bigint, boolean, boolean]
     const unlocked    = arr[4]
     const earlyExited = arr[5]
     if (unlocked || earlyExited) return sum
