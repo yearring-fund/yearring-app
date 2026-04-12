@@ -55,6 +55,7 @@ export const VAULT_ABI = parseAbi([
   'function transferToStrategyManager(uint256 amount)',
   'function lockLedger() view returns (address)',
   'function externalTransfersEnabled() view returns (bool)',
+  'function setExternalTransfersEnabled(bool enabled)',
   'function treasury() view returns (address)',
   // Emergency exit round management
   'function currentRoundId() view returns (uint256)',

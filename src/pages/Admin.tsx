@@ -824,22 +824,61 @@ function AdminConsole() {
             </div>
 
             {/* externalTransfersEnabled */}
-            <div className="bg-surface-container rounded-xl px-4 py-3">
-              <p className="text-xs text-on-surface-variant uppercase tracking-wider font-semibold mb-1.5">
+            <div className="bg-surface-container rounded-xl px-4 py-3 col-span-1 sm:col-span-2">
+              <p className="text-xs text-on-surface-variant uppercase tracking-wider font-semibold mb-2">
                 External Transfers
               </p>
-              {externalTransfersEnabled === undefined ? (
-                <p className="text-sm font-mono text-on-surface-variant">Loading…</p>
-              ) : externalTransfersEnabled ? (
-                <div className="flex items-center gap-1.5">
-                  <span className="material-symbols-outlined text-sm text-primary">check_circle</span>
-                  <span className="text-sm font-semibold text-primary">Enabled</span>
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                {externalTransfersEnabled === undefined ? (
+                  <p className="text-sm font-mono text-on-surface-variant">Loading…</p>
+                ) : externalTransfersEnabled ? (
+                  <div className="flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-sm text-primary">check_circle</span>
+                    <span className="text-sm font-semibold text-primary">Enabled — strategy invest allowed</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-sm text-amber-500">warning</span>
+                    <span className="text-sm font-semibold text-amber-600">Disabled — strategy invest blocked</span>
+                  </div>
+                )}
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    disabled={isLoading || externalTransfersEnabled === true}
+                    onClick={() =>
+                      send('enableExternalTransfers', () =>
+                        writeContract({
+                          address: ADDR.FundVaultV01,
+                          abi: VAULT_ABI,
+                          functionName: 'setExternalTransfersEnabled',
+                          args: [true],
+                        })
+                      )
+                    }
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-primary text-on-primary hover:opacity-90 disabled:opacity-40 transition-opacity"
+                  >
+                    Enable
+                  </button>
+                  <button
+                    disabled={isLoading || externalTransfersEnabled === false}
+                    onClick={() =>
+                      send('disableExternalTransfers', () =>
+                        writeContract({
+                          address: ADDR.FundVaultV01,
+                          abi: VAULT_ABI,
+                          functionName: 'setExternalTransfersEnabled',
+                          args: [false],
+                        })
+                      )
+                    }
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-error text-on-error hover:opacity-90 disabled:opacity-40 transition-opacity"
+                  >
+                    Disable
+                  </button>
                 </div>
-              ) : (
-                <div className="flex items-center gap-1.5">
-                  <span className="material-symbols-outlined text-sm text-amber-500">warning</span>
-                  <span className="text-sm font-semibold text-amber-600">Disabled — strategy invest blocked</span>
-                </div>
+              </div>
+              {(lastAction === 'enableExternalTransfers' || lastAction === 'disableExternalTransfers') && (
+                <TxBanner hash={actionHash} isPending={txPending} isSuccess={txSuccess} />
               )}
             </div>
 
