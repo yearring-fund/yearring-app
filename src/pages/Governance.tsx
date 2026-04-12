@@ -109,7 +109,6 @@ function ProposalCard({
 }) {
   const now   = Math.floor(Date.now() / 1000)
   const state = proposalState(p, now)
-  const canVote = state === 'Active' && !voted && myPower >= threshold
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
