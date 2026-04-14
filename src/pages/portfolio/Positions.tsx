@@ -96,6 +96,81 @@ function ModeBadge({ mode }: { mode: number | undefined }) {
   )
 }
 
+// ── Capital Structure Flow ─────────────────────────────────────────────────
+function StructureFlow({ reservePct }: { reservePct: number }) {
+  type FlowNode = { icon: string; label: string; sub: string; accent: string; bg: string }
+  const nodes: FlowNode[] = [
+    { icon: 'person',          label: 'Depositor',    sub: 'USDC',             accent: '#715a3e', bg: 'rgba(113,90,62,0.07)' },
+    { icon: 'account_balance', label: 'fbUSDC Vault', sub: 'share accounting', accent: '#18281e', bg: 'rgba(24,40,30,0.06)'  },
+    { icon: 'trending_up',     label: 'Aave V3',      sub: 'lending yield',    accent: '#18281e', bg: 'rgba(24,40,30,0.06)'  },
+  ]
+  return (
+    <div className="rounded-xl overflow-hidden" style={{ border: '1px solid #e8e8e2' }}>
+      <div className="px-5 py-2.5 flex items-center justify-between" style={{ background: '#f9f9f6', borderBottom: '1px solid #e8e8e2' }}>
+        <span className="text-[9px] font-bold uppercase tracking-widest text-[#434844]/40">Capital structure</span>
+        <span className="text-[9px] text-[#434844]/30">
+          Non-custodial · Base mainnet{reservePct > 0 ? ` · Reserve ${reservePct.toFixed(1)}% of TVL` : ''}
+        </span>
+      </div>
+      <div className="px-5 py-5" style={{ background: '#fff' }}>
+        <div className="flex items-start gap-0">
+          {nodes.map((node, i) => (
+            <div key={node.label} className="flex items-center flex-1 min-w-0">
+              <div className="flex flex-col items-center gap-1.5 flex-shrink-0">
+                <div className="w-10 h-10 rounded-full flex items-center justify-center"
+                  style={{ background: node.bg, border: `1px solid ${node.accent}22` }}>
+                  <span className="material-symbols-outlined text-sm" style={{ color: node.accent }}>{node.icon}</span>
+                </div>
+                <div className="text-center w-[68px]">
+                  <p className="text-[9px] font-bold text-[#1b1c1a] leading-snug">{node.label}</p>
+                  <p className="text-[8px] text-[#434844]/40">{node.sub}</p>
+                </div>
+              </div>
+              {i < nodes.length - 1 && (
+                <div className="flex-1 flex items-center pb-4 px-1">
+                  <div className="h-px flex-1"
+                    style={{ background: 'repeating-linear-gradient(90deg, #c3c8c2 0, #c3c8c2 4px, transparent 4px, transparent 9px)' }} />
+                  <svg width="6" height="8" viewBox="0 0 6 8" className="flex-shrink-0 mx-0.5">
+                    <path d="M0 1L5 4L0 7" fill="none" stroke="#c3c8c2" strokeWidth="1.2" strokeLinecap="round"/>
+                  </svg>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* Reserve note */}
+        {reservePct > 0 && (
+          <div className="mt-1 flex items-center gap-1.5 pl-[84px]">
+            <div className="w-px h-4" style={{ background: 'repeating-linear-gradient(180deg, #c3c8c2 0, #c3c8c2 3px, transparent 3px, transparent 6px)' }} />
+            <div className="flex items-center gap-1.5">
+              <div className="w-7 h-7 rounded-full flex items-center justify-center"
+                style={{ background: 'rgba(113,90,62,0.06)', border: '1px solid rgba(113,90,62,0.12)' }}>
+                <span className="material-symbols-outlined text-xs" style={{ color: '#715a3e', fontSize: '13px' }}>savings</span>
+              </div>
+              <div>
+                <p className="text-[9px] font-bold text-[#1b1c1a] leading-snug">Reserve Pool</p>
+                <p className="text-[8px] text-[#434844]/40">idle USDC · instant redemption</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Exit path guarantee */}
+        <div className="mt-4 flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg"
+          style={{ background: 'rgba(24,40,30,0.03)', border: '1px solid rgba(24,40,30,0.07)' }}>
+          <span className="material-symbols-outlined text-sm text-[#18281e]">shield</span>
+          <p className="text-[9px] text-[#434844]/55 leading-relaxed flex-1">
+            Emergency exit is active at all system states. All shareholders may claim pro-rata USDC
+            regardless of strategy liquidity or governance status.
+          </p>
+          <span className="text-[9px] font-bold text-[#18281e] flex-shrink-0">Protected</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Emergency Exit Panel ───────────────────────────────────────────────────
 type ExitRound = { snapshotId: bigint; snapshotTotalSupply: bigint; availableAssets: bigint; totalClaimed: bigint; isOpen: boolean }
 
@@ -618,6 +693,9 @@ export default function Positions() {
         </div>
       )}
 
+      {/* ── Capital structure flow ─────────────────────────────────────── */}
+      <StructureFlow reservePct={reserveRatioPct} />
+
       {/* ── Deposit / Redeem panels ─────────────────────────────────────── */}
       {!isConnected ? (
         <div className="rounded-2xl flex flex-col items-center justify-center py-14 text-center space-y-3"
@@ -639,6 +717,33 @@ export default function Positions() {
           >
             Deposit
           </h3>
+
+          {/* Position parameters */}
+          <div className="rounded-lg overflow-hidden" style={{ border: '1px solid #e8e8e2' }}>
+            <div className="px-3 py-2" style={{ background: '#f9f9f6', borderBottom: '1px solid #e8e8e2' }}>
+              <span className="text-[9px] font-bold uppercase tracking-widest text-[#434844]/40">
+                You are entering a structured fund container
+              </span>
+            </div>
+            <div style={{ background: '#fff' }}>
+              {([
+                ['Asset',         'USDC'],
+                ['Network',       'Base'],
+                ['Strategy',      'Aave V3'],
+                ['Share token',   'fbUSDC · ERC-4626'],
+                ['Custody',       'Non-custodial'],
+                ['Governance',    '24h Timelock on all admin ops'],
+                ['Exit',          'Emergency exit always available'],
+                ['Audit status',  'In preparation · Allowlist active'],
+              ] as [string, string][]).map(([k, v]) => (
+                <div key={k} className="flex items-center justify-between px-3 py-1.5"
+                  style={{ borderBottom: '1px solid #f5f5f0' }}>
+                  <span className="text-[10px] text-[#434844]/45 font-semibold">{k}</span>
+                  <span className="text-[10px] font-bold text-[#1b1c1a] text-right">{v}</span>
+                </div>
+              ))}
+            </div>
+          </div>
 
           {/* Input */}
           <div className="space-y-1">
@@ -720,6 +825,43 @@ export default function Positions() {
             Redeem
           </h3>
 
+          {/* Exit path status */}
+          <div className="rounded-lg overflow-hidden" style={{ border: '1px solid #e8e8e2' }}>
+            <div className="px-3 py-2 flex items-center justify-between"
+              style={{ background: '#f9f9f6', borderBottom: '1px solid #e8e8e2' }}>
+              <span className="text-[9px] font-bold uppercase tracking-widest text-[#434844]/40">Exit path</span>
+              <ModeBadge mode={systemModeNum} />
+            </div>
+            <div style={{ background: '#fff' }}>
+              <div className="flex items-center justify-between px-3 py-1.5"
+                style={{ borderBottom: '1px solid #f5f5f0' }}>
+                <span className="text-[10px] text-[#434844]/45 font-semibold">Normal redeem</span>
+                <span className="text-[10px] font-bold"
+                  style={{ color: redeemsPaused ? '#dc2626' : '#18281e' }}>
+                  {redeemsPaused ? 'Paused' : 'Available'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between px-3 py-1.5"
+                style={{ borderBottom: '1px solid #f5f5f0' }}>
+                <span className="text-[10px] text-[#434844]/45 font-semibold">Reserve on hand</span>
+                <span className="text-[10px] font-bold text-[#1b1c1a]">
+                  {reserveUSDC > 0n
+                    ? `$${fmtUSDC(reserveUSDC)} · ${reserveRatioPct.toFixed(1)}% of TVL`
+                    : '—'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between px-3 py-1.5"
+                style={{ borderBottom: '1px solid #f5f5f0' }}>
+                <span className="text-[10px] text-[#434844]/45 font-semibold">Asset returned</span>
+                <span className="text-[10px] font-bold text-[#1b1c1a]">USDC · to your wallet</span>
+              </div>
+              <div className="flex items-center justify-between px-3 py-1.5">
+                <span className="text-[10px] text-[#434844]/45 font-semibold">Emergency exit</span>
+                <span className="text-[10px] font-bold text-[#18281e]">Always available</span>
+              </div>
+            </div>
+          </div>
+
           {/* Input */}
           <div className="space-y-1">
             <div className="border-b-2 border-[#c3c8c2] focus-within:border-[#715a3e] transition-colors pb-1.5 flex items-center gap-2">
@@ -754,8 +896,6 @@ export default function Positions() {
             </div>
           )}
 
-          {/* Spacer to align with deposit step indicator */}
-          <div className="h-4" />
 
           {/* Error */}
           {redeemErr && (

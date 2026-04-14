@@ -561,6 +561,38 @@ export default function Home() {
           </div>
         </section>
 
+        {/* Protocol status strip */}
+        <section className="px-8 mt-4">
+          <div className="flex items-center gap-5 flex-wrap px-5 py-3 rounded-xl"
+            style={{ background: '#f5f5f0', border: '1px solid #e8e8e2' }}>
+            <span className="text-[9px] font-bold uppercase tracking-widest text-[#434844]/35 flex-shrink-0">
+              Protocol
+            </span>
+            <div className="w-px h-3.5 bg-[#e8e8e2] flex-shrink-0" />
+            {([
+              { label: 'Strategy',     value: 'Aave V3'       },
+              { label: 'Network',      value: 'Base'          },
+              { label: 'Custody',      value: 'Non-custodial' },
+              { label: 'Governance',   value: '24h Timelock', dot: '#18281e' },
+              { label: 'APR (est.)',   value: aprDecimal > 0 ? `${(aprDecimal * 100).toFixed(2)}%` : '—' },
+              { label: 'Protocol TVL', value: totalAssets > 0n ? `$${fmtUSD(Number(formatUnits(totalAssets, 6)))}` : '—' },
+            ] as { label: string; value: string; dot?: string }[]).map(({ label, value, dot }) => (
+              <div key={label} className="flex items-center gap-1.5 flex-shrink-0">
+                {dot && <span className="w-1.5 h-1.5 rounded-full" style={{ background: dot }} />}
+                <span className="text-[10px] text-[#434844]/50 font-semibold">{label}:</span>
+                <span className="text-[10px] font-bold text-[#1b1c1a]">{value}</span>
+              </div>
+            ))}
+            <div className="ml-auto flex-shrink-0 flex items-center gap-3">
+              <a href="https://basescan.org/address/0x9dD61ee543a9C51aBe7B26A89687C9aEeea98a54"
+                target="_blank" rel="noopener"
+                className="text-[9px] font-bold text-[#715a3e] hover:underline">
+                Verify on BaseScan ↗
+              </a>
+            </div>
+          </div>
+        </section>
+
         {/* Main content grid */}
         <section className="max-w-7xl mx-auto px-8 py-16">
           <div className="grid grid-cols-12 gap-10">
@@ -642,6 +674,50 @@ export default function Home() {
                 <p className="text-xs text-[#96a99b] leading-relaxed">
                   Total assets under management across all participants.
                 </p>
+              </div>
+
+
+              {/* Security entry card */}
+              <div className="rounded-xl p-5" style={{ border: '1px solid #e8e8e2', background: '#fff' }}>
+                <p className="text-[9px] font-bold uppercase tracking-widest text-[#434844]/40 mb-3">
+                  Security status
+                </p>
+                <div className="space-y-2 mb-4">
+                  {([
+                    { label: 'Timelock',       value: '24h delay · active',    ok: true  },
+                    { label: 'Emergency exit', value: 'Always available',       ok: true  },
+                    { label: 'Source code',    value: 'Open source · GitHub',   ok: true  },
+                    { label: 'Audit',          value: 'In preparation',         ok: false },
+                  ] as { label: string; value: string; ok: boolean }[]).map(({ label, value, ok }) => (
+                    <div key={label} className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                          style={{ background: ok ? '#18281e' : '#715a3e' }} />
+                        <span className="text-[10px] text-[#434844]/60">{label}</span>
+                      </div>
+                      <span className="text-[10px] font-semibold text-[#1b1c1a] text-right">{value}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex items-center gap-3 pt-3" style={{ borderTop: '1px solid #f0f0ec' }}>
+                  <a href="https://basescan.org/address/0x9dD61ee543a9C51aBe7B26A89687C9aEeea98a54"
+                    target="_blank" rel="noopener"
+                    className="text-[10px] font-bold text-[#715a3e] hover:underline">
+                    BaseScan ↗
+                  </a>
+                  <span className="text-[#e8e8e2]">·</span>
+                  <a href="https://github.com/yearring-fund/YearRing-FundProtocol"
+                    target="_blank" rel="noopener"
+                    className="text-[10px] font-bold text-[#715a3e] hover:underline">
+                    Protocol ↗
+                  </a>
+                  <span className="text-[#e8e8e2]">·</span>
+                  <a href="https://yearringfund.com/#security"
+                    target="_blank" rel="noopener"
+                    className="text-[10px] font-bold text-[#715a3e] hover:underline">
+                    Trust ↗
+                  </a>
+                </div>
               </div>
             </div>
 
