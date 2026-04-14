@@ -268,18 +268,10 @@ export default function Home() {
       const TRANSFER_SIG = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef' as `0x${string}`
 
       const [deposits, redeems] = await Promise.all([
-        publicClient.getLogs({
-          address: ADDR.FundVaultV01 as Address,
-          topics: [TRANSFER_SIG, ZERO, padded],
-          fromBlock: from,
-          toBlock: 'latest',
-        }),
-        publicClient.getLogs({
-          address: ADDR.FundVaultV01 as Address,
-          topics: [TRANSFER_SIG, padded, ZERO],
-          fromBlock: from,
-          toBlock: 'latest',
-        }),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        publicClient.getLogs({ address: ADDR.FundVaultV01 as Address, topics: [TRANSFER_SIG, ZERO, padded],   fromBlock: from, toBlock: 'latest' } as any),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        publicClient.getLogs({ address: ADDR.FundVaultV01 as Address, topics: [TRANSFER_SIG, padded, ZERO],   fromBlock: from, toBlock: 'latest' } as any),
       ])
 
       const raw: ActivityItem[] = [

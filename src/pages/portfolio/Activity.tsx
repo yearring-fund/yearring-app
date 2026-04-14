@@ -138,16 +138,10 @@ export default function Activity() {
       // 2 queries: all transfers FROM user + all transfers TO user
       // then classify client-side — avoids 4 parallel getLogs on public RPC
       const [fromUser, toUser] = await Promise.all([
-        publicClient.getLogs({
-          address: ADDR.FundVaultV01 as Address,
-          topics: [TRANSFER_SIG, padded, null],
-          fromBlock: from, toBlock: 'latest',
-        }),
-        publicClient.getLogs({
-          address: ADDR.FundVaultV01 as Address,
-          topics: [TRANSFER_SIG, null, padded],
-          fromBlock: from, toBlock: 'latest',
-        }),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        publicClient.getLogs({ address: ADDR.FundVaultV01 as Address, topics: [TRANSFER_SIG, padded, null], fromBlock: from, toBlock: 'latest' } as any),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        publicClient.getLogs({ address: ADDR.FundVaultV01 as Address, topics: [TRANSFER_SIG, null, padded], fromBlock: from, toBlock: 'latest' } as any),
       ])
 
       function classify(l: typeof fromUser[0]): TxType | null {

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import {
   useAccount,
+  usePublicClient,
   useReadContracts,
   useReadContract,
   useWriteContract,
@@ -223,6 +224,7 @@ function EmergencyExitPanel({ fbUsdcBalance }: { fbUsdcBalance: bigint }) {
 // ── Main component ─────────────────────────────────────────────────────────
 export default function Positions() {
   const { address, isConnected } = useAccount()
+  const publicClient = usePublicClient()
   const [depositAmt, setDepositAmt] = useState('')
   const [redeemAmt,  setRedeemAmt]  = useState('')
   const [depositErr, setDepositErr] = useState('')
@@ -239,10 +241,11 @@ export default function Positions() {
       { address: ADDR.FundVaultV01 as Address, abi: VAULT_ABI, functionName: 'depositsPaused' },
       { address: ADDR.FundVaultV01 as Address, abi: VAULT_ABI, functionName: 'redeemsPaused' },
       { address: ADDR.FundVaultV01 as Address, abi: VAULT_ABI, functionName: 'isAllowed',      args: [address ?? '0x0000000000000000000000000000000000000000'] },
-      { address: ADDR.FundVaultV01 as Address, abi: VAULT_ABI, functionName: 'systemMode',     query: { refetchInterval: 10_000 } } as const,
+      { address: ADDR.FundVaultV01 as Address, abi: VAULT_ABI, functionName: 'systemMode' },
       { address: ADDR.FundVaultV01 as Address, abi: VAULT_ABI, functionName: 'pricePerShare' },
       { address: ADDR.FundVaultV01 as Address, abi: VAULT_ABI, functionName: 'mgmtFeeBpsPerMonth' },
     ],
+    query: { refetchInterval: 10_000 },
   })
 
   const fbUsdcBalance  = (reads?.[0]?.result as bigint) ?? 0n
@@ -337,6 +340,54 @@ export default function Positions() {
       return next
     })
   }, [pps])
+
+  // ── Seed PPS history from chain on first visit ───────────────────────────
+  // If localStorage has < 2 points, sample pricePerShare() at 7 daily
+  // intervals going back from the current block (Base ~2s/block).
+  useEffect(() => {
+    if (!publicClient) return
+    const stored = loadPps()
+    if (stored.length >= 2) return          // already have history
+
+    const BLOCKS_PER_DAY = 43_200n          // Base: ~2s per block
+    const SAMPLES = 7
+
+    async function seed() {
+      try {
+        const currentBlock = await publicClient!.getBlockNumber()
+        const points: PpsPoint[] = []
+
+        for (let i = SAMPLES - 1; i >= 0; i--) {
+          const blockNumber = currentBlock - BigInt(i) * BLOCKS_PER_DAY
+          if (blockNumber < 0n) continue
+          try {
+            const result = await publicClient!.readContract({
+              address: ADDR.FundVaultV01 as Address,
+              abi: VAULT_ABI,
+              functionName: 'pricePerShare',
+              blockNumber,
+            }) as bigint
+            const block = await publicClient!.getBlock({ blockNumber })
+            points.push({
+              t: Number(block.timestamp) * 1000,
+              v: Number(formatUnits(result, 6)),
+            })
+          } catch {
+            // block too early or contract not yet deployed — skip
+          }
+        }
+
+        if (points.length >= 2) {
+          savePps(points)
+          setPpsHistory(points)
+        }
+      } catch {
+        // RPC error — fall back to accumulating normally
+      }
+    }
+
+    seed()
+  }, [publicClient]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Parsed amounts ────────────────────────────────────────────────────────
   const parsedDeposit = safeParse(depositAmt, 6)
