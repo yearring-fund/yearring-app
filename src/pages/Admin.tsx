@@ -183,11 +183,13 @@ function AdminConsole() {
       { address: ADDR.FundVaultV01, abi: VAULT_ABI, functionName: 'externalTransfersEnabled' },
       // 11 — strategy address
       { address: ADDR.StrategyManagerV01, abi: STRAT_MGR_ABI, functionName: 'strategy' },
+      // 12 — treasury address
+      { address: ADDR.FundVaultV01, abi: VAULT_ABI, functionName: 'treasury' },
     ],
   })
 
   const totalAssets      = data?.[0]?.result as bigint | undefined
-  const systemModeRaw    = data?.[1]?.result as number | undefined
+  const systemModeRaw    = data?.[1]?.result !== undefined ? Number(data[1].result) : undefined
   const depositsPaused   = data?.[2]?.result as boolean | undefined
   const redeemsPaused    = data?.[3]?.result as boolean | undefined
   const mgmtFeeBps       = data?.[4]?.result as bigint | undefined
@@ -198,9 +200,32 @@ function AdminConsole() {
   const lockLedger       = data?.[9]?.result as string | undefined
   const externalTransfersEnabled = data?.[10]?.result as boolean | undefined
   const strategyAddr     = data?.[11]?.result as string | undefined
+  const treasuryAddr     = data?.[12]?.result as Address | undefined
 
   const systemModeKey = (systemModeRaw ?? 0) as SystemModeKey
   const systemModeLabel = SystemMode[systemModeKey] ?? '—'
+
+  // ── Treasury fee balance ─────────────────────────────────────────────────────
+  const { data: feeData, refetch: refetchFee } = useReadContracts({
+    contracts: [
+      {
+        address: ADDR.FundVaultV01,
+        abi: VAULT_ABI,
+        functionName: 'balanceOf',
+        args: [treasuryAddr ?? '0x0000000000000000000000000000000000000000'],
+      },
+    ],
+    query: { enabled: !!treasuryAddr },
+  })
+  const treasuryShares = feeData?.[0]?.result as bigint | undefined
+
+  const { data: feeUsdc } = useReadContract({
+    address: ADDR.FundVaultV01,
+    abi: VAULT_ABI,
+    functionName: 'convertToAssets',
+    args: [treasuryShares ?? 0n],
+    query: { enabled: treasuryShares !== undefined },
+  })
 
   // ── Write hook (single shared instance per action group) ────────────────────
   const {
@@ -231,6 +256,7 @@ function AdminConsole() {
     if (txHash && txHash !== actionHash) {
       setActionHash(txHash)
       refetch()
+      refetchFee()
     }
   }, [txHash])
 
@@ -456,6 +482,59 @@ function AdminConsole() {
           </button>
         </ActionRow>
         {(lastAction === 'setMgmtFee' || lastAction === 'setReserveRatio' || lastAction === 'accrueManagementFee') && (
+          <TxBanner hash={actionHash} isPending={txPending} isSuccess={txSuccess} />
+        )}
+      </Section>
+
+      {/* ── Fee Collection ────────────────────────────────────────────────────── */}
+      <Section icon="payments" title="Fee Collection">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
+          <div className="bg-surface-container rounded-xl px-4 py-3">
+            <p className="text-xs text-on-surface-variant uppercase tracking-wider font-semibold mb-1">Treasury Address</p>
+            <a
+              href={treasuryAddr ? `https://basescan.org/address/${treasuryAddr}` : '#'}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm font-mono text-primary hover:underline"
+            >
+              {treasuryAddr ? `${treasuryAddr.slice(0, 6)}…${treasuryAddr.slice(-4)}` : '—'}
+            </a>
+          </div>
+          <div className="bg-surface-container rounded-xl px-4 py-3">
+            <p className="text-xs text-on-surface-variant uppercase tracking-wider font-semibold mb-1">Accrued Shares</p>
+            <p className="text-sm font-bold text-on-surface font-mono">
+              {treasuryShares !== undefined ? parseFloat(formatUnits(treasuryShares, 18)).toFixed(6) : '—'}
+            </p>
+          </div>
+          <div className="bg-surface-container rounded-xl px-4 py-3">
+            <p className="text-xs text-on-surface-variant uppercase tracking-wider font-semibold mb-1">Redeemable USDC</p>
+            <p className="text-sm font-bold text-on-surface font-mono">
+              {feeUsdc !== undefined ? `$${formatUSDC(feeUsdc as bigint)}` : '—'}
+            </p>
+          </div>
+        </div>
+        <ActionRow
+          label="Collect All Fees"
+          description="Redeem all treasury shares to USDC. Must be signed by the treasury wallet."
+        >
+          <button
+            disabled={isLoading || !treasuryShares || treasuryShares === 0n || !treasuryAddr}
+            onClick={() =>
+              send('collectFees', () =>
+                writeContract({
+                  address: ADDR.FundVaultV01,
+                  abi: VAULT_ABI,
+                  functionName: 'redeem',
+                  args: [treasuryShares!, treasuryAddr!, treasuryAddr!],
+                })
+              )
+            }
+            className="px-4 py-2 rounded-lg text-sm font-semibold bg-primary text-on-primary hover:opacity-90 disabled:opacity-40 transition-opacity"
+          >
+            Collect All Fees
+          </button>
+        </ActionRow>
+        {lastAction === 'collectFees' && (
           <TxBanner hash={actionHash} isPending={txPending} isSuccess={txSuccess} />
         )}
       </Section>

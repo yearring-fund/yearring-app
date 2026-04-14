@@ -7,7 +7,7 @@ import {
   useWaitForTransactionReceipt,
 } from 'wagmi'
 import { parseUnits, formatUnits, type Address } from 'viem'
-import { ADDR, VAULT_ABI, USDC_ABI, STRAT_MGR_ABI, AAVE_POOL_ABI, AAVE_V3_POOL_BASE } from '../lib/contracts'
+import { ADDR, VAULT_ABI, USDC_ABI, STRAT_MGR_ABI, AAVE_POOL_ABI, AAVE_V3_POOL_BASE, LEDGER_ABI } from '../lib/contracts'
 import { formatUSDC, formatShares } from '../lib/format'
 import { parseTxError } from '../lib/txError'
 
@@ -33,6 +33,7 @@ function EmergencyExitPanel({ userShares }: { userShares: bigint }) {
     address: ADDR.FundVaultV01 as Address,
     abi: VAULT_ABI,
     functionName: 'currentRoundId',
+    query: { refetchInterval: 10_000 },
   })
 
   const { data: roundData, refetch: refetchRound } = useReadContract({
@@ -413,6 +414,7 @@ export default function Vault() {
     abi: VAULT_ABI,
     functionName: 'systemMode',
     args: [],
+    query: { refetchInterval: 10_000 },
   })
 
   // ── Aave V3 supply APY ──────────────────────────────────────────────────────
@@ -439,6 +441,32 @@ export default function Vault() {
     abi: STRAT_MGR_ABI,
     functionName: 'strategy',
   })
+
+  // ── Locked shares in LockLedger ─────────────────────────────────────────────
+  const { data: lockIdsRaw } = useReadContract({
+    address: ADDR.LockLedgerV02 as Address,
+    abi: LEDGER_ABI,
+    functionName: 'userLockIds',
+    args: [address ?? '0x0000000000000000000000000000000000000000'],
+    query: { enabled: isConnected && !!address },
+  })
+  const lockIds: bigint[] = (lockIdsRaw as bigint[] | undefined) ?? []
+
+  const { data: lockReads } = useReadContracts({
+    contracts: lockIds.map((id) => ({
+      address: ADDR.LockLedgerV02 as Address,
+      abi: LEDGER_ABI,
+      functionName: 'getLock',
+      args: [id],
+    })),
+    query: { enabled: lockIds.length > 0 },
+  })
+
+  const lockedShares: bigint = (lockReads ?? []).reduce((sum, r) => {
+    const lock = r.result as { owner: string; shares: bigint; unlocked: boolean; earlyExited: boolean } | undefined
+    if (!lock || lock.unlocked || lock.earlyExited) return sum
+    return sum + lock.shares
+  }, 0n)
 
   // ── Write: approve USDC ─────────────────────────────────────────────────────
   const {
@@ -607,7 +635,6 @@ export default function Vault() {
     if (!isConnected) return { label: 'Connect Wallet', disabled: true }
     if (readsLoading) return { label: 'Loading…', disabled: true }
     if (systemModeNum === 2) return { label: 'Emergency Mode — Use Claim Exit Below', disabled: true, variant: 'warn' }
-    if (!isAllowed) return { label: 'Not Allowlisted', disabled: true, variant: 'warn' }
     if (redeemsPaused) return { label: 'Redeems Paused', disabled: true, variant: 'warn' }
     if (!amount || Number(amount) <= 0) return { label: 'Enter Amount', disabled: true }
     if (parsedSharesAmount > fbUsdcBalance) return { label: 'Insufficient fbUSDC', disabled: true, variant: 'warn' }
@@ -717,10 +744,16 @@ export default function Vault() {
               label="Your Balance"
               value={
                 isConnected
-                  ? `${formatShares(fbUsdcBalance)} fbUSDC`
+                  ? `${formatShares(fbUsdcBalance + lockedShares)} fbUSDC`
                   : '—'
               }
-              sub={isConnected ? `USDC balance: ${formatUSDC(usdcBalance)}` : 'Not connected'}
+              sub={
+                isConnected
+                  ? lockedShares > 0n
+                    ? `Free: ${formatShares(fbUsdcBalance)} · Locked: ${formatShares(lockedShares)}`
+                    : `USDC balance: ${formatUSDC(usdcBalance)}`
+                  : 'Not connected'
+              }
             />
             <StatCard
               icon="verified_user"
@@ -956,22 +989,11 @@ export default function Vault() {
                     {redeemBtn.label}
                   </button>
 
-                  {/* Allowlist status */}
-                  {isConnected && (
-                    <div
-                      className={[
-                        'flex items-center gap-2 text-xs rounded-xl px-3 py-2',
-                        isAllowed
-                          ? 'bg-primary-fixed text-on-primary-container'
-                          : 'bg-error-container text-on-error-container',
-                      ].join(' ')}
-                    >
-                      <span className="material-symbols-outlined text-sm">
-                        {isAllowed ? 'verified' : 'block'}
-                      </span>
-                      {isAllowed
-                        ? `Your wallet ${address?.slice(0, 6)}…${address?.slice(-4)} is allowlisted`
-                        : 'Your wallet is not on the allowlist. Contact the fund manager.'}
+                  {/* Allowlist status — redeem is open to all shareholders; deposit requires allowlist */}
+                  {isConnected && !isAllowed && (
+                    <div className="flex items-center gap-2 text-xs rounded-xl px-3 py-2 bg-surface-variant text-on-surface-variant">
+                      <span className="material-symbols-outlined text-sm">info</span>
+                      Redeem is open to all shareholders. Deposits require allowlist.
                     </div>
                   )}
 

@@ -7,7 +7,6 @@ export function parseTxError(err: unknown): string {
     return 'Transaction rejected in wallet.'
 
   if (/reverted/i.test(msg)) {
-    // Try to extract a revert reason string
     const reason = msg.match(/reason:\s*"?([^"\n]+)"?/i)?.[1]
       ?? msg.match(/execution reverted:\s*([^\n]+)/i)?.[1]
     return reason ? `Reverted: ${reason}` : 'Transaction reverted by contract.'
@@ -19,4 +18,21 @@ export function parseTxError(err: unknown): string {
 
   // Fallback: first 120 chars
   return msg.length > 120 ? msg.slice(0, 120) + '…' : msg
+}
+
+// Parse a wagmi/viem read error into a short user-facing message
+export function parseReadError(err: unknown): string {
+  if (!err) return ''
+  const msg = (err as Error)?.message ?? String(err)
+
+  if (/rate.?limit|429|too many requests/i.test(msg))
+    return 'RPC rate limited — try again in a moment.'
+  if (/timeout|timed out/i.test(msg))
+    return 'Request timed out — check your connection.'
+  if (/network|fetch|failed to fetch|getaddrinfo/i.test(msg))
+    return 'Network error — check your connection.'
+  if (/could not be found|not found|invalid address/i.test(msg))
+    return 'Contract not found — you may be on the wrong network.'
+
+  return 'Unable to load data — RPC may be unavailable.'
 }

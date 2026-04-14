@@ -188,7 +188,7 @@ function PositionsTable({
   // Write: unlock
   const { writeContract: writeUnlock, data: unlockHash, isPending: unlockPending, error: unlockError } =
     useWriteContract()
-  const { isSuccess: unlockSuccess } = useWaitForTransactionReceipt({ hash: unlockHash })
+  const { isLoading: unlockConfirming, isSuccess: unlockSuccess } = useWaitForTransactionReceipt({ hash: unlockHash })
 
   // Write: claimRebate
   const { writeContract: writeClaim, data: claimHash, isPending: claimPending, error: claimError } =
@@ -333,7 +333,7 @@ function PositionsTable({
                     <div className="flex items-center justify-end gap-2">
                       {canUnlock && (
                         <button
-                          disabled={unlockPending}
+                          disabled={unlockPending || unlockConfirming}
                           onClick={() =>
                             writeUnlock({
                               address: ADDR.LockLedgerV02 as Address,
@@ -342,10 +342,24 @@ function PositionsTable({
                               args: [id],
                             })
                           }
-                          className="text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-primary text-on-primary hover:bg-primary-dim transition-colors disabled:opacity-50"
+                          className="text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-primary text-on-primary hover:bg-primary-dim transition-colors disabled:opacity-50 flex items-center gap-1"
                         >
-                          Unlock
+                          {unlockPending
+                            ? <><span className="w-3 h-3 rounded-full border-2 border-on-primary border-t-transparent animate-spin" />Signing…</>
+                            : unlockConfirming
+                            ? <><span className="w-3 h-3 rounded-full border-2 border-on-primary border-t-transparent animate-spin" />Confirming…</>
+                            : 'Unlock'}
                         </button>
+                      )}
+                      {unlockSuccess && unlockHash && (
+                        <a
+                          href={`https://basescan.org/tx/${unlockHash}`}
+                          target="_blank" rel="noreferrer"
+                          className="text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-primary-fixed text-on-primary-container flex items-center gap-1"
+                        >
+                          <span className="material-symbols-outlined text-sm">check_circle</span>
+                          Done
+                        </a>
                       )}
                       {!lock.unlocked && !lock.earlyExited && rebate > 0n && (
                         <button
@@ -363,38 +377,51 @@ function PositionsTable({
                           Claim Rebate
                         </button>
                       )}
-                      {/* Early exit: approve RWT first if needed, then exit */}
-                      {canEarlyExit && needsRwtApprove && (
-                        <button
-                          disabled={approveRwtPending}
-                          onClick={() =>
-                            writeApproveRwt({
-                              address: ADDR.RewardToken as Address,
-                              abi: RWT_ABI,
-                              functionName: 'approve',
-                              args: [ADDR.LockRewardManagerV02 as Address, earlyExitInfo!.tokensToReturn],
-                            })
-                          }
-                          className="text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-warning-container text-on-warning-container hover:opacity-90 transition-colors disabled:opacity-50"
-                        >
-                          Approve RWT
-                        </button>
-                      )}
-                      {canEarlyExit && !needsRwtApprove && (
-                        <button
-                          disabled={earlyExitPending}
-                          onClick={() =>
-                            writeEarlyExit({
-                              address: ADDR.LockRewardManagerV02 as Address,
-                              abi: LOCK_MGR_ABI,
-                              functionName: 'earlyExitWithReturn',
-                              args: [id],
-                            })
-                          }
-                          className="text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-error-container text-on-error-container hover:bg-error hover:text-on-error transition-colors disabled:opacity-50"
-                        >
-                          Early Exit
-                        </button>
+                      {/* Early exit: single button, two-step internally when RWT approval needed */}
+                      {canEarlyExit && (
+                        <div className="flex flex-col items-end gap-1">
+                          {needsRwtApprove && earlyExitInfo && earlyExitInfo.tokensToReturn > 0n && (
+                            <div className="flex items-center gap-1 text-[10px] text-on-surface-variant/70">
+                              <span className="font-semibold text-primary">1</span>
+                              <span>Authorize</span>
+                              <span className="text-outline-variant">›</span>
+                              <span className="text-on-surface-variant/40">2</span>
+                              <span className="text-on-surface-variant/40">Exit</span>
+                            </div>
+                          )}
+                          {!needsRwtApprove && earlyExitInfo && earlyExitInfo.tokensToReturn > 0n && !earlyExitSuccess && (
+                            <div className="flex items-center gap-1 text-[10px] text-on-surface-variant/70">
+                              <span className="text-on-surface-variant/40">1</span>
+                              <span className="text-on-surface-variant/40">Authorize</span>
+                              <span className="text-outline-variant">›</span>
+                              <span className="font-semibold text-primary">2</span>
+                              <span>Exit</span>
+                            </div>
+                          )}
+                          <button
+                            disabled={needsRwtApprove ? approveRwtPending : earlyExitPending}
+                            onClick={() =>
+                              needsRwtApprove
+                                ? writeApproveRwt({
+                                    address: ADDR.RewardToken as Address,
+                                    abi: RWT_ABI,
+                                    functionName: 'approve',
+                                    args: [ADDR.LockRewardManagerV02 as Address, earlyExitInfo!.tokensToReturn],
+                                  })
+                                : writeEarlyExit({
+                                    address: ADDR.LockRewardManagerV02 as Address,
+                                    abi: LOCK_MGR_ABI,
+                                    functionName: 'earlyExitWithReturn',
+                                    args: [id],
+                                  })
+                            }
+                            className="text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-error-container text-on-error-container hover:bg-error hover:text-on-error transition-colors disabled:opacity-50 flex items-center gap-1"
+                          >
+                            {(needsRwtApprove ? approveRwtPending : earlyExitPending)
+                              ? <><span className="w-3 h-3 rounded-full border-2 border-current border-t-transparent animate-spin" />Signing…</>
+                              : 'Early Exit'}
+                          </button>
+                        </div>
                       )}
                       {lock.unlocked && (
                         <span className="text-xs text-on-surface-variant italic">Completed</span>
@@ -409,8 +436,7 @@ function PositionsTable({
                     {/* Early exit info hint */}
                     {canEarlyExit && earlyExitInfo && earlyExitInfo.tokensToReturn > 0n && (
                       <p className="text-[10px] text-error/70 text-right leading-tight">
-                        {needsRwtApprove ? 'Approve RWT first · ' : ''}
-                        Return {formatRWT(earlyExitInfo.tokensToReturn)} RWT ·{' '}
+                        Penalty: return {formatRWT(earlyExitInfo.tokensToReturn)} RWT ·{' '}
                         {remainingDays}d remaining
                       </p>
                     )}
@@ -463,7 +489,7 @@ export default function Lock() {
         functionName: 'allowance',
         args: [
           address ?? '0x0000000000000000000000000000000000000000',
-          ADDR.LockRewardManagerV02 as Address,
+          ADDR.LockLedgerV02 as Address,
         ],
       },
     ],
@@ -581,7 +607,7 @@ export default function Lock() {
             address: ADDR.FundVaultV01 as Address,
             abi: VAULT_ABI,
             functionName: 'approve',
-            args: [ADDR.LockRewardManagerV02 as Address, parsedLockAmount],
+            args: [ADDR.LockLedgerV02 as Address, parsedLockAmount],
           }),
       }
     return {
@@ -749,6 +775,44 @@ export default function Lock() {
             </p>
           </div>
 
+          {/* Step indicator */}
+          {isConnected && lockAmount && Number(lockAmount) > 0 && (
+            <div className="flex items-center gap-0">
+              {[
+                { label: 'Approve', done: !needsApproval, active: needsApproval || approveInFlight },
+                { label: 'Lock',    done: lockSuccess,    active: !needsApproval && !lockSuccess },
+                { label: 'Done',    done: lockSuccess,    active: lockSuccess },
+              ].map((step, i, arr) => (
+                <div key={step.label} className="flex items-center flex-1">
+                  <div className="flex flex-col items-center gap-1 flex-1">
+                    <div className={[
+                      'w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-colors',
+                      step.done
+                        ? 'bg-primary text-on-primary'
+                        : step.active
+                        ? 'bg-secondary text-on-secondary ring-2 ring-secondary/40'
+                        : 'bg-surface-container text-on-surface-variant',
+                    ].join(' ')}>
+                      {step.done
+                        ? <span className="material-symbols-outlined text-sm">check</span>
+                        : <span>{i + 1}</span>}
+                    </div>
+                    <span className={[
+                      'text-[10px] font-semibold',
+                      step.active ? 'text-secondary' : step.done ? 'text-primary' : 'text-on-surface-variant/50',
+                    ].join(' ')}>{step.label}</span>
+                  </div>
+                  {i < arr.length - 1 && (
+                    <div className={[
+                      'h-0.5 flex-1 mb-4 transition-colors',
+                      arr[i + 1].done || arr[i + 1].active ? 'bg-primary' : 'bg-outline-variant/40',
+                    ].join(' ')} />
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* Lock button */}
           <button
             disabled={lockBtn.disabled}
@@ -800,13 +864,13 @@ export default function Lock() {
           </div>
 
           <div className="space-y-3 flex-1">
-            {/* Selected tier */}
+            {/* Tier + fee rebate combined */}
             <div className="flex justify-between items-center py-2 border-b border-outline-variant/30">
-              <span className="text-sm text-on-surface-variant">Selected Tier</span>
-              <div className="flex items-center gap-1.5">
-                <span className="material-symbols-outlined text-base text-on-surface">{tier.icon}</span>
-                <span className="font-semibold text-on-surface text-sm">
-                  {tier.name} ({secondsToDuration(tier.duration)})
+              <span className="text-sm text-on-surface-variant">Tier</span>
+              <div className="flex items-center gap-2">
+                <span className="font-semibold text-on-surface text-sm">{tier.name}</span>
+                <span className="text-xs font-bold text-primary bg-primary-fixed px-1.5 py-0.5 rounded-full">
+                  {(tier.feeDiscountBps / 100).toFixed(0)}% rebate
                 </span>
               </div>
             </div>
@@ -819,27 +883,7 @@ export default function Lock() {
               </span>
             </div>
 
-            {/* Fee rebate */}
-            <div className="flex justify-between items-center py-2 border-b border-outline-variant/30">
-              <span className="text-sm text-on-surface-variant">Fee Rebate</span>
-              <span className="font-bold text-primary text-sm">
-                {(tier.feeDiscountBps / 100).toFixed(0)}%
-              </span>
-            </div>
-
-            {/* RWT issuance */}
-            <div className="flex justify-between items-center py-2 border-b border-outline-variant/30">
-              <span className="text-sm text-on-surface-variant">RWT Issuance</span>
-              <span className="font-semibold text-on-surface text-sm">—</span>
-            </div>
-
-            {/* Projected APY */}
-            <div className="flex justify-between items-center py-2 border-b border-outline-variant/30">
-              <span className="text-sm text-on-surface-variant">Projected APY</span>
-              <span className="font-semibold text-on-surface text-sm">—</span>
-            </div>
-
-            {/* Lock amount preview */}
+            {/* Lock amount */}
             <div className="flex justify-between items-center py-2">
               <span className="text-sm text-on-surface-variant">Lock Amount</span>
               <span className="font-semibold text-on-surface text-sm">
