@@ -541,15 +541,56 @@ export default function Locks() {
 
   if (!address) {
     return (
-      <div className="max-w-7xl mx-auto px-5 md:px-8 py-12 flex flex-col items-center justify-center min-h-[40vh] text-center space-y-3">
-        <span className="material-symbols-outlined text-4xl text-[#c3c8c2]">lock</span>
-        <p className="text-sm text-[#434844]">Connect your wallet to manage locks.</p>
+      <div className="max-w-2xl mx-auto px-5 md:px-6 py-8 space-y-4">
+        {/* Mechanism explainer */}
+        <div className="rounded-2xl p-5 space-y-4" style={{ background: '#f5f5f0' }}>
+          <div className="flex items-center gap-2">
+            <span className="material-symbols-outlined text-base text-[#715a3e]">lock</span>
+            <span className="text-xs font-bold text-[#1b1c1a]" style={{ fontFamily: "'Noto Serif', serif" }}>
+              What locking does
+            </span>
+          </div>
+          <p className="text-xs text-[#434844]/70 leading-relaxed">
+            Locking commits fbUSDC shares for a fixed term. In exchange you receive a management fee rebate for the duration of the lock, plus an RWT reward when the lock matures. RWT is the protocol's governance token — it grants voting power on protocol parameter proposals.
+          </p>
+          <div className="grid grid-cols-1 gap-2">
+            {([
+              ['token',              'Bronze · 30 days — 20% fee rebate · 1.0× RWT reward'],
+              ['workspace_premium',  'Silver · 90 days — 40% fee rebate · 1.3× RWT reward'],
+              ['military_tech',      'Gold · 180 days — 60% fee rebate · 1.8× RWT reward'],
+            ] as const).map(([icon, text]) => (
+              <div key={icon} className="flex items-start gap-2.5 px-3 py-2.5 rounded-lg" style={{ background: '#fff', border: '1px solid #e8e8e2' }}>
+                <span className="material-symbols-outlined text-base text-[#715a3e] flex-shrink-0 mt-0.5">{icon}</span>
+                <span className="text-[11px] text-[#434844]/70 leading-relaxed">{text}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="rounded-2xl flex flex-col items-center justify-center py-8 text-center"
+          style={{ background: '#fff', border: '1px solid #e8e8e2' }}>
+          <span className="material-symbols-outlined text-2xl text-[#c3c8c2] mb-2">account_balance_wallet</span>
+          <p className="text-xs font-semibold text-[#434844]/60">Connect your wallet to manage locks.</p>
+        </div>
       </div>
     )
   }
 
   return (
     <div className="max-w-2xl mx-auto px-5 md:px-6 py-8 space-y-8">
+
+      {/* ── Lock mechanism summary ─────────────────────────────────────────── */}
+      <div className="rounded-xl px-4 py-3 flex flex-wrap gap-x-6 gap-y-1.5" style={{ background: '#f5f5f0' }}>
+        {[
+          ['Fee rebate', 'Applied for the full lock duration — starts immediately'],
+          ['RWT reward', 'Distributed at unlock. Used for governance voting.'],
+          ['Early exit', 'Available at any time — rebate and RWT reward are forfeited'],
+        ].map(([k, v]) => (
+          <div key={k} className="flex items-center gap-1.5">
+            <span className="text-[10px] font-bold text-[#434844]/50">{k}</span>
+            <span className="text-[10px] text-[#434844]/40">{v}</span>
+          </div>
+        ))}
+      </div>
 
       {/* ── Section: New Lock ──────────────────────────────────────────────── */}
       <div>
@@ -721,10 +762,11 @@ export default function Locks() {
             ))}
           </div>
         ) : activeLocks.length === 0 ? (
-          <div className="rounded-2xl flex flex-col items-center justify-center py-10 text-center"
-            style={{ background: '#f5f5f0' }}>
-            <span className="material-symbols-outlined text-3xl text-[#c3c8c2] mb-2">lock_open</span>
-            <p className="text-sm text-[#434844]/50">No active locks</p>
+          <div className="rounded-2xl flex flex-col items-center justify-center py-8 text-center"
+            style={{ background: '#fff', border: '1px solid #e8e8e2' }}>
+            <span className="material-symbols-outlined text-2xl text-[#c3c8c2] mb-2">lock_open</span>
+            <p className="text-xs font-semibold text-[#434844]/60">No active locks</p>
+            <p className="text-[11px] text-[#434844]/35 mt-1">Choose a tier above and lock fbUSDC shares to start earning rebates and RWT.</p>
           </div>
         ) : (
           <div className="space-y-3" key={refreshSig}>

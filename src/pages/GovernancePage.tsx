@@ -382,10 +382,35 @@ export default function GovernancePage() {
 
         {/* Not connected */}
         {!isConnected && (
-          <div className="rounded-2xl flex flex-col items-center justify-center py-12 text-center space-y-3"
-            style={{ background: '#f5f5f0' }}>
-            <span className="material-symbols-outlined text-4xl text-[#c3c8c2]">how_to_vote</span>
-            <p className="text-sm text-[#434844]">Connect your wallet to participate in governance.</p>
+          <div className="space-y-4">
+            <div className="rounded-2xl p-5 space-y-4" style={{ background: '#f5f5f0' }}>
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-base text-[#715a3e]">how_to_vote</span>
+                <span className="text-xs font-bold text-[#1b1c1a]" style={{ fontFamily: "'Noto Serif', serif" }}>
+                  How governance works
+                </span>
+              </div>
+              <p className="text-xs text-[#434844]/70 leading-relaxed">
+                Governance on YearRing is a signal layer — not a multisig. RWT holders vote on protocol parameter proposals. Outcomes inform the core team's decisions; they do not execute autonomously. All admin operations still go through a 24-hour timelock.
+              </p>
+              <div className="grid grid-cols-1 gap-2">
+                {[
+                  ['lock', 'Earn RWT by locking fbUSDC shares in the Locks tab. Longer locks earn more.'],
+                  ['how_to_vote', 'Hold enough RWT to meet the voting threshold, then cast For / Against / Abstain.'],
+                  ['tune', 'Proposal types: Reward Rate, Fee Discount, Inactivity Threshold, General.'],
+                ].map(([icon, text]) => (
+                  <div key={icon} className="flex items-start gap-2.5 px-3 py-2.5 rounded-lg" style={{ background: '#fff', border: '1px solid #e8e8e2' }}>
+                    <span className="material-symbols-outlined text-base text-[#715a3e] flex-shrink-0 mt-0.5">{icon}</span>
+                    <span className="text-[11px] text-[#434844]/70 leading-relaxed">{text}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="rounded-2xl flex flex-col items-center justify-center py-8 text-center"
+              style={{ background: '#fff', border: '1px solid #e8e8e2' }}>
+              <span className="material-symbols-outlined text-2xl text-[#c3c8c2] mb-2">account_balance_wallet</span>
+              <p className="text-xs font-semibold text-[#434844]/60">Connect your wallet to view proposals and vote.</p>
+            </div>
           </div>
         )}
 
@@ -408,10 +433,38 @@ export default function GovernancePage() {
                 ))}
               </div>
             ) : proposals.length === 0 ? (
-              <div className="rounded-2xl flex flex-col items-center justify-center py-12 text-center"
-                style={{ background: '#f5f5f0' }}>
-                <span className="material-symbols-outlined text-3xl text-[#c3c8c2] mb-2">ballot</span>
-                <p className="text-sm text-[#434844]/50">No proposals yet.</p>
+              <div className="space-y-4">
+                {/* Governance explainer */}
+                <div className="rounded-2xl p-5 space-y-4" style={{ background: '#f5f5f0' }}>
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-base text-[#715a3e]">how_to_vote</span>
+                    <span className="text-xs font-bold text-[#1b1c1a]" style={{ fontFamily: "'Noto Serif', serif" }}>
+                      How governance works
+                    </span>
+                  </div>
+                  <p className="text-xs text-[#434844]/70 leading-relaxed">
+                    Governance on YearRing is a signal layer — not a multisig. RWT holders vote on protocol parameter proposals. Outcomes inform the core team's decisions; they do not execute autonomously. All admin operations on the protocol still go through a 24-hour timelock.
+                  </p>
+                  <div className="grid grid-cols-1 gap-2">
+                    {[
+                      ['lock', 'Earn RWT by locking fbUSDC shares in the Locks tab. Longer locks earn more.'],
+                      ['how_to_vote', `You need ≥ ${fmtRWT(threshold)} RWT to cast a vote on any active proposal.`],
+                      ['tune', 'Proposal types: Reward Rate, Fee Discount, Inactivity Threshold, General.'],
+                    ].map(([icon, text]) => (
+                      <div key={icon} className="flex items-start gap-2.5 px-3 py-2.5 rounded-lg" style={{ background: '#fff', border: '1px solid #e8e8e2' }}>
+                        <span className="material-symbols-outlined text-base text-[#715a3e] flex-shrink-0 mt-0.5">{icon}</span>
+                        <span className="text-[11px] text-[#434844]/70 leading-relaxed">{text}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                {/* No proposals CTA */}
+                <div className="rounded-2xl flex flex-col items-center justify-center py-8 text-center"
+                  style={{ background: '#fff', border: '1px solid #e8e8e2' }}>
+                  <span className="material-symbols-outlined text-2xl text-[#c3c8c2] mb-2">inbox</span>
+                  <p className="text-xs font-semibold text-[#434844]/60">No proposals on-chain yet</p>
+                  <p className="text-[11px] text-[#434844]/35 mt-1">Proposals appear here once submitted by a credentialed proposer.</p>
+                </div>
               </div>
             ) : null}
             <div className="space-y-4">

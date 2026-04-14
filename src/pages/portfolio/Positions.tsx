@@ -556,6 +556,7 @@ export default function Positions() {
   const redeemBtn = (() => {
     if (!isConnected)         return { label: 'Connect Wallet',    disabled: true }
     if (systemModeNum === 2)  return { label: 'Use Emergency Exit', disabled: true }
+    if (systemModeNum === 1)  return { label: 'Protocol Paused',   disabled: true }
     if (redeemsPaused)        return { label: 'Redeems Paused',    disabled: true }
     if (parsedRedeem === 0n)  return { label: 'Enter Amount',      disabled: true }
     if (parsedRedeem > fbUsdcBalance) return { label: 'Insufficient Balance', disabled: true }

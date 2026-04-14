@@ -177,11 +177,23 @@ export default function Home() {
         abi: VAULT_ABI,
         functionName: 'totalAssets',
       },
+      {
+        address: ADDR.FundVaultV01 as Address,
+        abi: VAULT_ABI,
+        functionName: 'systemMode',
+      },
+      {
+        address: ADDR.FundVaultV01 as Address,
+        abi: VAULT_ABI,
+        functionName: 'pricePerShare',
+      },
     ],
   })
 
   const userShares   = (reads?.[0]?.result as bigint) ?? 0n
   const totalAssets  = (reads?.[1]?.result as bigint) ?? 0n
+  const systemModeNum = reads?.[2]?.result !== undefined ? Number(reads[2].result) : undefined
+  const pricePerShare = (reads?.[3]?.result as bigint) ?? 0n
 
   // Locked shares
   const { data: lockIdsRaw } = useReadContract({
@@ -519,44 +531,126 @@ export default function Home() {
       </nav>
 
       <main className="pt-20">
-        {/* Hero */}
+        {/* Hero — 2-column structured panel */}
         <section className="px-8 mt-6">
-          <div
-            className="relative w-full min-h-[420px] rounded-xl overflow-hidden flex flex-col items-center justify-center text-center p-12"
-            style={{ background: 'linear-gradient(145deg, #18281e 0%, #2d3e33 100%)' }}
-          >
-            {/* Ring motif layers */}
-            {[1, 1.5, 0.75].map((scale, i) => (
-              <div
-                key={i}
-                className="absolute inset-0 pointer-events-none"
-                style={{
-                  opacity: [0.15, 0.08, 0.05][i],
-                  transform: `scale(${scale})`,
-                  backgroundImage: 'radial-gradient(circle at center, transparent 30%, rgba(113,90,62,0.12) 31%, transparent 32%)',
-                  backgroundSize: '800px 800px',
-                  backgroundPosition: 'center',
-                  backgroundRepeat: 'no-repeat',
-                }}
-              />
-            ))}
-            {heroContent}
-            {/* Action buttons inside hero on desktop */}
-            <div className="flex gap-5 justify-center mt-8 relative z-10">
-              <button
-                onClick={() => navigate('/portfolio/positions')}
-                className="flex items-center gap-2.5 bg-white text-[#18281e] px-10 py-3.5 rounded-xl font-bold text-base hover:bg-[#f5f3ef] transition-all active:scale-95"
-              >
-                <span className="material-symbols-outlined">add_circle</span>
-                Deposit
-              </button>
-              <button
-                onClick={() => navigate('/portfolio/positions')}
-                className="flex items-center gap-2.5 border border-white/20 bg-white/8 text-white backdrop-blur-sm px-10 py-3.5 rounded-xl font-bold text-base hover:bg-white/15 transition-all active:scale-95"
-              >
-                <span className="material-symbols-outlined">remove_circle</span>
-                Redeem
-              </button>
+          <div className="grid grid-cols-2 gap-0 rounded-xl overflow-hidden" style={{ border: '1px solid #e8e8e2' }}>
+            {/* Left: portfolio summary */}
+            <div
+              className="relative p-8 flex flex-col justify-between"
+              style={{ background: 'linear-gradient(145deg, #18281e 0%, #2d3e33 100%)' }}
+            >
+              {/* Ring motif */}
+              <div className="absolute inset-0 pointer-events-none opacity-10"
+                style={{ backgroundImage: 'radial-gradient(circle at 80% 50%, transparent 30%, rgba(113,90,62,0.15) 31%, transparent 32%)', backgroundSize: '600px 600px', backgroundRepeat: 'no-repeat', backgroundPosition: '80% center' }} />
+              <div className="relative z-10 space-y-5">
+                <div>
+                  <span className="text-[10px] font-bold tracking-[0.2em] uppercase text-white/50 block mb-1">
+                    Your Fund Value
+                  </span>
+                  <div className="text-5xl font-bold text-white" style={{ fontFamily: "'Noto Serif', serif" }}>
+                    {isConnected && holdingsFloat > 0 ? `$${fmtUSD(holdingsFloat)}` : '$—'}
+                  </div>
+                  <div className="flex items-center gap-2 mt-2">
+                    <span className="text-xs text-white/50">{plLabel}</span>
+                    <span className="text-xs font-semibold" style={{ color: '#e0c29f' }}>
+                      {isConnected && plValue > 0 ? `+$${fmtUSD(plValue)}` : '—'}
+                    </span>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  {[
+                    { label: 'Available', value: isConnected ? `$${fmtUSD(Number(formatUnits(userShares, 18)) * (pps || 1))}` : '—', icon: 'account_balance_wallet' },
+                    { label: 'Locked',    value: isConnected ? `$${fmtUSD(Number(formatUnits(lockedShares, 18)) * (pps || 1))}` : '—', icon: 'lock' },
+                  ].map(({ label, value, icon }) => (
+                    <div key={label} className="px-3 py-2.5 rounded-lg" style={{ background: 'rgba(255,255,255,0.07)' }}>
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <span className="material-symbols-outlined text-xs text-white/40">{icon}</span>
+                        <span className="text-[10px] text-white/40 font-semibold uppercase tracking-wider">{label}</span>
+                      </div>
+                      <span className="text-sm font-bold text-white" style={{ fontFamily: "'Noto Serif', serif" }}>{value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="relative z-10 flex gap-3 mt-6">
+                <button
+                  onClick={() => navigate('/portfolio/positions')}
+                  className="flex-1 flex items-center justify-center gap-2 bg-white text-[#18281e] py-3 rounded-lg font-bold text-sm hover:bg-[#f5f3ef] transition-all active:scale-95"
+                >
+                  <span className="material-symbols-outlined text-base">add_circle</span>
+                  Deposit
+                </button>
+                <button
+                  onClick={() => navigate('/portfolio/positions')}
+                  className="flex-1 flex items-center justify-center gap-2 border border-white/20 text-white py-3 rounded-lg font-bold text-sm hover:bg-white/10 transition-all active:scale-95"
+                >
+                  <span className="material-symbols-outlined text-base">remove_circle</span>
+                  Redeem
+                </button>
+              </div>
+            </div>
+
+            {/* Right: protocol state */}
+            <div className="p-8 flex flex-col justify-between" style={{ background: '#f9f9f6' }}>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-[#434844]/40">Protocol State</span>
+                  {(() => {
+                    const mode = systemModeNum
+                    if (mode === undefined) return <span className="text-[10px] text-[#434844]/30">—</span>
+                    const cfg: Record<number, { label: string; dot: string; bg: string; text: string }> = {
+                      0: { label: 'Normal',         dot: '#18281e',  bg: '#18281e14', text: '#18281e' },
+                      1: { label: 'Paused',         dot: '#d97706',  bg: '#fef3c7',  text: '#92400e' },
+                      2: { label: 'Emergency Exit', dot: '#dc2626',  bg: '#fef2f2',  text: '#dc2626' },
+                    }
+                    const c = cfg[mode] ?? cfg[0]
+                    return (
+                      <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full"
+                        style={{ background: c.bg, color: c.text }}>
+                        <span className="w-1.5 h-1.5 rounded-full" style={{ background: c.dot }} />
+                        {c.label}
+                      </span>
+                    )
+                  })()}
+                </div>
+                <div style={{ height: '1px', background: '#e8e8e2' }} />
+                <div className="space-y-2.5">
+                  {[
+                    { label: 'Strategy',   value: 'Aave V3 · USDC' },
+                    { label: 'Network',    value: 'Base Mainnet' },
+                    { label: 'PPS',        value: pricePerShare > 0n ? Number(formatUnits(pricePerShare, 6)).toFixed(6) : '—' },
+                    { label: 'APR (est.)', value: aprDecimal > 0 ? `${(aprDecimal * 100).toFixed(2)}%` : '—' },
+                    { label: 'Protocol TVL', value: totalAssets > 0n ? `$${fmtUSD(Number(formatUnits(totalAssets, 6)))}` : '—' },
+                    { label: 'Governance', value: '24h Timelock' },
+                  ].map(({ label, value }) => (
+                    <div key={label} className="flex items-center justify-between text-xs">
+                      <span className="text-[#434844]/50">{label}</span>
+                      <span className="font-semibold text-[#1b1c1a]">{value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="pt-4 flex items-center gap-3 flex-wrap" style={{ borderTop: '1px solid #e8e8e2' }}>
+                <a href={`https://basescan.org/address/${ADDR.FundVaultV01}`}
+                  target="_blank" rel="noopener"
+                  className="text-[10px] font-bold text-[#715a3e] hover:underline flex items-center gap-0.5">
+                  BaseScan ↗
+                </a>
+                <span className="text-[#e8e8e2]">·</span>
+                <button
+                  onClick={() => navigate('/settings')}
+                  className="text-[10px] font-bold text-[#715a3e] hover:underline"
+                >
+                  Contracts
+                </button>
+                <span className="text-[#e8e8e2]">·</span>
+                <button
+                  onClick={() => navigate('/portfolio/positions')}
+                  className="text-[10px] font-bold text-[#715a3e] hover:underline"
+                >
+                  Exit path →
+                </button>
+              </div>
             </div>
           </div>
         </section>

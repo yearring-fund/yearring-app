@@ -83,7 +83,7 @@ export default function Settings() {
   const { connect } = useConnect()
   const navigate  = useNavigate()
   const location  = useLocation()
-  const [contractsOpen, setContractsOpen] = useState(false)
+  const [contractsOpen, setContractsOpen] = useState(true)
   const [addrCopied, setAddrCopied] = useState(false)
   const [period, setPeriod] = useState<Period>(
     () => (localStorage.getItem('homePeriod') as Period) || 'week'
@@ -298,22 +298,22 @@ export default function Settings() {
           <span className="text-[10px] font-bold uppercase tracking-widest text-[#434844]/50">About</span>
         </div>
         <div className="p-5 space-y-3">
-          <div className="flex items-center justify-between text-xs">
-            <span className="text-[#434844]/60">Protocol</span>
-            <span className="font-semibold text-[#1b1c1a]">YearRing Fund</span>
-          </div>
-          <div className="flex items-center justify-between text-xs">
-            <span className="text-[#434844]/60">Version</span>
-            <span className="font-mono text-[#1b1c1a]">V02</span>
-          </div>
-          <div className="flex items-center justify-between text-xs">
-            <span className="text-[#434844]/60">Network</span>
-            <span className="text-[#1b1c1a]">Base Mainnet (Chain ID 8453)</span>
-          </div>
+          {[
+            ['Protocol',  'YearRing Fund'],
+            ['Version',   'V02'],
+            ['Network',   'Base Mainnet · Chain ID 8453'],
+            ['License',   'BUSL-1.1 with Additional Use Grant'],
+            ['Audit',     'In preparation · Allowlist active'],
+          ].map(([label, value]) => (
+            <div key={label} className="flex items-center justify-between text-xs">
+              <span className="text-[#434844]/60">{label}</span>
+              <span className={`text-[#1b1c1a] ${label === 'Version' ? 'font-mono' : 'font-semibold'}`}>{value}</span>
+            </div>
+          ))}
           <div style={{ height: '1px', background: '#e8e8e2' }} />
-          <div className="flex items-center gap-4 pt-1">
+          <div className="flex items-center flex-wrap gap-x-4 gap-y-2 pt-1">
             <a
-              href="https://basescan.org/address/0x9dD61ee543a9C51aBe7B26A89687C9aEeea98a54"
+              href={`https://basescan.org/address/${ADDR.FundVaultV01}`}
               target="_blank"
               rel="noreferrer"
               className="flex items-center gap-1 text-xs text-[#434844]/50 hover:text-[#434844] transition-colors"
@@ -321,8 +321,17 @@ export default function Settings() {
               <span className="material-symbols-outlined text-sm">open_in_new</span>
               BaseScan
             </a>
+            <a
+              href="https://github.com/yearringfund"
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center gap-1 text-xs text-[#434844]/50 hover:text-[#434844] transition-colors"
+            >
+              <span className="material-symbols-outlined text-sm">code</span>
+              GitHub
+            </a>
             <span className="text-xs text-[#434844]/30">·</span>
-            <span className="text-xs text-[#434844]/30">Docs (coming soon)</span>
+            <span className="text-xs text-[#434844]/30">Docs coming soon</span>
           </div>
         </div>
       </div>
