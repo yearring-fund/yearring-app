@@ -48,6 +48,75 @@ function truncateAddr(a: string) {
 
 // ── Sub-components ─────────────────────────────────────────────────────────
 
+const OFFICIAL_LINKS = [
+  { label: 'Website', href: 'https://yearringfund.com',                              display: 'yearringfund.com',                            external: false },
+  { label: 'App',     href: 'https://app.yearringfund.com',                          display: 'app.yearringfund.com',                        external: false },
+  { label: 'GitHub',  href: 'https://github.com/SiLugang/YearRing-FundProtocol',    display: 'github.com/SiLugang/YearRing-FundProtocol',   external: true  },
+  { label: 'Email',   href: 'mailto:hello@yearringfund.com',                         display: 'hello@yearringfund.com',                      external: false },
+]
+
+function SecurityNoticeCard({ className = '' }: { className?: string }) {
+  const [expanded, setExpanded] = useState(false)
+  return (
+    <div
+      className={`rounded-xl p-5 ${className}`}
+      style={{ border: '1px solid #e8e8e2', background: '#f9f9f6' }}
+    >
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div className="flex-1 min-w-0">
+          <p className="text-[9px] font-bold uppercase tracking-widest text-[#18281e]/60 mb-2">
+            Security Notice
+          </p>
+          <p className="text-xs text-[#434844] leading-relaxed">
+            Please verify all access points through{' '}
+            <a href="https://yearringfund.com" className="font-semibold text-[#18281e] hover:underline">
+              yearringfund.com
+            </a>
+            . We only recognize the official links listed here. Official contact:{' '}
+            <a href="mailto:hello@yearringfund.com" className="font-semibold text-[#18281e] hover:underline">
+              hello@yearringfund.com
+            </a>
+          </p>
+        </div>
+        <button
+          onClick={() => setExpanded(v => !v)}
+          className="flex-shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold text-[#18281e] border border-[#18281e]/15 hover:bg-[#18281e]/5 transition-all whitespace-nowrap"
+        >
+          View Official Links
+          <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>
+            {expanded ? 'expand_less' : 'expand_more'}
+          </span>
+        </button>
+      </div>
+
+      {expanded && (
+        <div className="mt-4 pt-4" style={{ borderTop: '1px solid #e8e8e2' }}>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-3 mb-4 sm:grid-cols-4">
+            {OFFICIAL_LINKS.map(({ label, href, display, external }) => (
+              <div key={label} className="flex flex-col gap-0.5">
+                <span className="text-[9px] font-bold uppercase tracking-widest text-[#434844]/40">
+                  {label}
+                </span>
+                <a
+                  href={href}
+                  target={external ? '_blank' : undefined}
+                  rel={external ? 'noopener noreferrer' : undefined}
+                  className="text-[11px] font-semibold text-[#18281e] hover:underline break-all leading-snug"
+                >
+                  {display}
+                </a>
+              </div>
+            ))}
+          </div>
+          <p className="text-[10px] text-[#8a9089] leading-relaxed">
+            Only trust links listed above. Any other links or contact methods are unofficial.
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function NetworkBadge() {
   return (
     <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-[#c3c8c2]/30 text-xs font-semibold text-[#434844] bg-[#f5f3ef]">
@@ -441,6 +510,9 @@ export default function Home() {
             </div>
           )}
         </section>
+
+        {/* Security Notice */}
+        <SecurityNoticeCard />
 
         {/* Quote */}
         <footer className="pt-8 pb-4 border-t border-[#c3c8c2]/15">
@@ -883,6 +955,11 @@ export default function Home() {
             but by the strength of its stewardship over time."
           </p>
           <div className="w-10 h-px bg-[#715a3e]/30 mx-auto mt-10" />
+        </section>
+
+        {/* Security Notice */}
+        <section className="max-w-7xl mx-auto px-8 pb-10">
+          <SecurityNoticeCard />
         </section>
       </main>
 
