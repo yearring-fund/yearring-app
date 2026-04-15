@@ -61,6 +61,7 @@ export const VAULT_ABI = parseAbi([
   'function currentRoundId() view returns (uint256)',
   'function exitRounds(uint256 roundId) view returns ((uint256 snapshotId, uint256 snapshotTotalSupply, uint256 availableAssets, uint256 totalClaimed, bool isOpen, uint256 snapshotTimestamp))',
   'function roundSharesClaimed(uint256 roundId, address user) view returns (uint256)',
+  'function balanceOfAt(address account, uint256 snapshotId) view returns (uint256)',
   'function claimExitAssets(uint256 roundId, uint256 sharesToBurn)',
   'function openExitModeRound(uint256 availableAssets)',
   'function closeExitModeRound()',

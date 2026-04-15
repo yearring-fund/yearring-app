@@ -172,7 +172,14 @@ function StructureFlow({ reservePct }: { reservePct: number }) {
 }
 
 // ── Emergency Exit Panel ───────────────────────────────────────────────────
-type ExitRound = { snapshotId: bigint; snapshotTotalSupply: bigint; availableAssets: bigint; totalClaimed: bigint; isOpen: boolean }
+type ExitRound = {
+  snapshotId: bigint
+  snapshotTotalSupply: bigint
+  availableAssets: bigint
+  totalClaimed: bigint
+  isOpen: boolean
+  snapshotTimestamp: bigint
+}
 
 function EmergencyExitPanel({ fbUsdcBalance }: { fbUsdcBalance: bigint }) {
   const { address } = useAccount()
@@ -184,41 +191,66 @@ function EmergencyExitPanel({ fbUsdcBalance }: { fbUsdcBalance: bigint }) {
     functionName: 'currentRoundId',
     query: { refetchInterval: 10_000 },
   })
+
+  const rid = roundId as bigint | undefined
+  const roundEnabled = !!rid && rid > 0n
+
   const { data: roundData, refetch: refetchRound } = useReadContract({
     address: ADDR.FundVaultV01 as Address, abi: VAULT_ABI,
-    functionName: 'exitRounds', args: [roundId as bigint],
-    query: { enabled: !!roundId && (roundId as bigint) > 0n },
+    functionName: 'exitRounds', args: [rid as bigint],
+    query: { enabled: roundEnabled },
   })
+
+  const round = roundData as ExitRound | undefined
+
   const { data: claimed, refetch: refetchClaimed } = useReadContract({
     address: ADDR.FundVaultV01 as Address, abi: VAULT_ABI,
     functionName: 'roundSharesClaimed',
-    args: [roundId as bigint, address as Address],
-    query: { enabled: !!roundId && (roundId as bigint) > 0n && !!address },
+    args: [rid as bigint, address as Address],
+    query: { enabled: roundEnabled && !!address },
+  })
+
+  // snapshot balance = user's fbUSDC at the moment Emergency Exit was declared
+  const { data: snapBalRaw } = useReadContract({
+    address: ADDR.FundVaultV01 as Address, abi: VAULT_ABI,
+    functionName: 'balanceOfAt',
+    args: [address as Address, round?.snapshotId as bigint],
+    query: { enabled: !!address && !!round && round.snapshotId > 0n },
   })
 
   const { writeContractAsync, isPending } = useWriteContract()
   const [txHash, setTxHash] = useState<`0x${string}` | undefined>()
   const { isLoading: confirming, isSuccess } = useWaitForTransactionReceipt({ hash: txHash })
 
-  const round      = roundData as ExitRound | undefined
-  const claimedAmt = (claimed as bigint | undefined) ?? 0n
-  const parsedBurn = safeParse(burnAmt, 18)
+  const claimedAmt  = (claimed    as bigint | undefined) ?? 0n
+  const snapBal     = (snapBalRaw as bigint | undefined) ?? 0n
 
-  const estimatedOut = round && round.snapshotTotalSupply > 0n
+  // Remaining eligible = snapshot balance − already claimed, capped at current free balance
+  const remaining   = snapBal > claimedAmt ? snapBal - claimedAmt : 0n
+  const maxBurn     = remaining < fbUsdcBalance ? remaining : fbUsdcBalance
+
+  const parsedBurn  = safeParse(burnAmt, 18)
+  const estimatedOut = round && round.snapshotTotalSupply > 0n && parsedBurn > 0n
     ? (parsedBurn * round.availableAssets) / round.snapshotTotalSupply
     : 0n
 
-  const noRound   = !roundId || (roundId as bigint) === 0n
-  const isClosed  = round && !round.isOpen
+  const noRound      = !rid || rid === 0n
+  const isClosed     = round && !round.isOpen
+  const fullyClaimed = round && round.isOpen && snapBal > 0n && remaining === 0n
+  const noEligible   = round && round.isOpen && snapBal === 0n
+
+  function fmtSnapDate(ts: bigint) {
+    return new Date(Number(ts) * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+  }
 
   const handleClaim = async () => {
-    if (!roundId || parsedBurn === 0n) return
+    if (!rid || parsedBurn === 0n) return
     setTxErr('')
     try {
       const hash = await writeContractAsync({
         address: ADDR.FundVaultV01 as Address, abi: VAULT_ABI,
         functionName: 'claimExitAssets',
-        args: [roundId as bigint, parsedBurn],
+        args: [rid, parsedBurn],
       })
       setTxHash(hash)
       setBurnAmt('')
@@ -227,65 +259,111 @@ function EmergencyExitPanel({ fbUsdcBalance }: { fbUsdcBalance: bigint }) {
   }
 
   return (
-    <div className="border border-red-200 rounded-xl overflow-hidden">
-      <div className="bg-red-600 px-5 py-3 flex items-center gap-2">
+    <div className="rounded-xl overflow-hidden" style={{ border: '1px solid #fca5a5' }}>
+      {/* Header */}
+      <div className="px-5 py-3 flex items-center gap-2" style={{ background: '#dc2626' }}>
         <span className="material-symbols-outlined text-white text-lg">emergency</span>
         <span className="text-white font-bold text-xs tracking-widest uppercase">Emergency Exit Mode</span>
+        {round && (
+          <span className="ml-auto text-[10px] text-white/60">
+            Round #{rid?.toString()} · snapshot {fmtSnapDate(round.snapshotTimestamp)}
+          </span>
+        )}
       </div>
-      <div className="bg-red-50 px-5 py-4 space-y-4">
-        <p className="text-sm text-red-800 leading-relaxed">
-          Normal deposits and redeems are disabled. Burn your fbUSDC shares below to claim a pro-rata share of the available USDC.
+
+      <div className="px-5 py-4 space-y-4" style={{ background: '#fef2f2' }}>
+        <p className="text-xs text-red-800 leading-relaxed">
+          Normal deposits and redeems are suspended. Your pro-rata share of available USDC can be claimed by burning fbUSDC shares below. Your eligibility is fixed at the snapshot taken when Emergency Exit was declared.
         </p>
+
         {noRound ? (
-          <p className="text-sm text-[#434844]/70 bg-white rounded-lg px-4 py-3">
-            No exit round open yet. The admin must call <code className="font-mono text-xs bg-[#f5f3ef] px-1 rounded">openExitModeRound()</code> first.
-          </p>
+          <div className="bg-white rounded-lg px-4 py-3 text-xs text-[#434844]/70">
+            No exit round open yet. Waiting for admin to call <code className="font-mono text-[10px] bg-[#f5f3ef] px-1 rounded">openExitModeRound()</code>.
+          </div>
         ) : isClosed ? (
-          <p className="text-sm text-[#434844]/70 bg-white rounded-lg px-4 py-3">
-            Round #{(roundId as bigint).toString()} is closed. Waiting for admin to open a new round.
-          </p>
+          <div className="bg-white rounded-lg px-4 py-3 text-xs text-[#434844]/70">
+            Round #{rid?.toString()} is closed. Waiting for admin to open a new round.
+          </div>
+        ) : fullyClaimed ? (
+          <div className="bg-white rounded-lg px-4 py-3 flex items-center gap-2">
+            <span className="material-symbols-outlined text-base text-emerald-600">check_circle</span>
+            <div>
+              <p className="text-xs font-semibold text-[#1b1c1a]">All eligible shares claimed</p>
+              <p className="text-[11px] text-[#434844]/50 mt-0.5">
+                You claimed {fmtShares(claimedAmt)} fbUSDC in this round.
+              </p>
+            </div>
+          </div>
+        ) : noEligible ? (
+          <div className="bg-white rounded-lg px-4 py-3 text-xs text-[#434844]/70">
+            Your wallet held no fbUSDC at the snapshot time and is not eligible in this round.
+          </div>
         ) : round ? (
           <div className="space-y-3">
-            <div className="grid grid-cols-3 gap-2">
+            {/* Round stats */}
+            <div className="grid grid-cols-2 gap-2">
               {[
-                { label: 'Round',     value: `#${(roundId as bigint).toString()}` },
-                { label: 'Available', value: `$${fmtUSDC(round.availableAssets)}` },
-                { label: 'Claimed',   value: `${fmtShares(claimedAmt)} fbUSDC` },
-              ].map(({ label, value }) => (
+                { label: 'Your snapshot balance', value: `${fmtShares(snapBal)} fbUSDC` },
+                { label: 'Already claimed',        value: `${fmtShares(claimedAmt)} fbUSDC` },
+                { label: 'Remaining eligible',     value: `${fmtShares(remaining)} fbUSDC`,  highlight: remaining > 0n },
+                { label: 'Round available',        value: `$${fmtUSDC(round.availableAssets)} USDC` },
+              ].map(({ label, value, highlight }) => (
                 <div key={label} className="bg-white rounded-lg px-3 py-2.5">
-                  <p className="text-[10px] text-[#434844] mb-0.5">{label}</p>
-                  <p className="font-bold text-[#1b1c1a] text-sm">{value}</p>
+                  <p className="text-[10px] text-[#434844]/50 mb-0.5">{label}</p>
+                  <p className={`font-bold text-sm ${highlight ? 'text-red-700' : 'text-[#1b1c1a]'}`}>{value}</p>
                 </div>
               ))}
             </div>
-            <div className="border-b-2 border-[#c3c8c2] focus-within:border-red-400 transition-colors pb-1 flex items-center gap-2 bg-white rounded-t-lg px-3 pt-2">
-              <input
-                type="number" min="0" placeholder="0.0000"
-                value={burnAmt}
-                onChange={e => setBurnAmt(e.target.value)}
-                className="flex-1 bg-transparent text-lg font-semibold text-[#1b1c1a] outline-none placeholder:text-[#434844]/25"
-              />
-              <span className="text-[#434844] text-sm font-medium">fbUSDC</span>
-              <button
-                onClick={() => fbUsdcBalance > 0n && setBurnAmt(formatUnits(fbUsdcBalance, 18))}
-                className="text-xs font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded"
-              >MAX</button>
+
+            {/* Input */}
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-[10px] font-semibold text-[#434844]/60">Shares to burn</span>
+                <span className="text-[10px] text-[#434844]/50">
+                  Eligible: <span className="font-mono font-semibold">{fmtShares(maxBurn)}</span> fbUSDC
+                </span>
+              </div>
+              <div className="flex items-center gap-2 bg-white rounded-lg px-3 py-2"
+                style={{ border: '1.5px solid #fca5a5' }}>
+                <input
+                  type="number" min="0" placeholder="0.0000"
+                  value={burnAmt}
+                  onChange={e => setBurnAmt(e.target.value)}
+                  className="flex-1 bg-transparent text-base font-semibold text-[#1b1c1a] outline-none placeholder:text-[#434844]/25 font-mono"
+                />
+                <span className="text-[#434844]/60 text-xs font-semibold">fbUSDC</span>
+                <button
+                  onClick={() => maxBurn > 0n && setBurnAmt(formatUnits(maxBurn, 18))}
+                  disabled={maxBurn === 0n}
+                  className="text-[10px] font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded disabled:opacity-30"
+                >MAX</button>
+              </div>
             </div>
+
+            {/* Estimate */}
             {parsedBurn > 0n && estimatedOut > 0n && (
-              <p className="text-xs text-[#434844]">
-                Estimated receive: <span className="font-semibold text-[#1b1c1a]">${fmtUSDC(estimatedOut)} USDC</span>
-              </p>
+              <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-white">
+                <span className="text-[11px] text-[#434844]/60">You will receive</span>
+                <span className="text-sm font-bold text-[#1b1c1a]">${fmtUSDC(estimatedOut)} USDC</span>
+              </div>
             )}
+
             {txErr && (
-              <p className="text-xs text-red-700 bg-red-100 rounded-lg px-3 py-2">{txErr}</p>
+              <div className="text-xs text-red-700 bg-red-100 rounded-lg px-3 py-2">{txErr}</div>
             )}
             {isSuccess && (
-              <p className="text-xs text-green-700 bg-green-50 rounded-lg px-3 py-2">✓ Claimed successfully</p>
+              <div className="flex items-center gap-1.5 text-xs text-emerald-700 bg-emerald-50 rounded-lg px-3 py-2">
+                <span className="material-symbols-outlined text-sm">check_circle</span>
+                Claimed successfully.{' '}
+                <a href={`https://basescan.org/tx/${txHash}`} target="_blank" rel="noreferrer" className="underline">View</a>
+              </div>
             )}
+
             <button
-              disabled={parsedBurn === 0n || parsedBurn > fbUsdcBalance || isPending || confirming}
+              disabled={parsedBurn === 0n || parsedBurn > maxBurn || isPending || confirming}
               onClick={handleClaim}
-              className="w-full py-3 rounded-lg text-sm font-bold bg-red-600 text-white hover:opacity-90 disabled:opacity-40 transition-opacity"
+              className="w-full py-3 rounded-lg text-sm font-bold text-white disabled:opacity-40 transition-all active:scale-[0.98]"
+              style={{ background: '#dc2626' }}
             >
               {confirming ? 'Confirming…' : isPending ? 'Signing…' : 'Claim Exit Assets'}
             </button>
