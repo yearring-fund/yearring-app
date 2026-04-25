@@ -331,7 +331,15 @@ export default function Settings() {
               GitHub
             </a>
             <span className="text-xs text-[#434844]/30">·</span>
-            <span className="text-xs text-[#434844]/30">Docs coming soon</span>
+            <a
+              href="https://docs.yearringfund.com"
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center gap-1 text-xs text-[#434844]/50 hover:text-[#434844] transition-colors"
+            >
+              <span className="material-symbols-outlined text-sm">menu_book</span>
+              Docs
+            </a>
           </div>
         </div>
       </div>

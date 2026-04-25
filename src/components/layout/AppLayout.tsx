@@ -35,7 +35,10 @@ export default function AppLayout() {
         </main>
         <footer className="border-t border-slate-200 bg-slate-50 flex justify-between items-center px-8 py-5 text-xs uppercase tracking-widest text-slate-400 font-bold">
           <span>YearRing Fund Protocol</span>
-          <span>Base Mainnet · Non-custodial · Non-guaranteed</span>
+          <span className="flex items-center gap-4">
+            <a href="https://docs.yearringfund.com" target="_blank" rel="noopener noreferrer" className="hover:text-slate-600 transition-colors">Docs</a>
+            <span>Base Mainnet · Non-custodial · Non-guaranteed</span>
+          </span>
         </footer>
       </div>
     </div>

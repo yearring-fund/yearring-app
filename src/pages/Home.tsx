@@ -51,6 +51,7 @@ function truncateAddr(a: string) {
 const OFFICIAL_LINKS = [
   { label: 'Website', href: 'https://yearringfund.com',                              display: 'yearringfund.com',                            external: false },
   { label: 'App',     href: 'https://app.yearringfund.com',                          display: 'app.yearringfund.com',                        external: false },
+  { label: 'Docs',    href: 'https://docs.yearringfund.com',                         display: 'docs.yearringfund.com',                       external: true  },
   { label: 'GitHub',  href: 'https://github.com/SiLugang/YearRing-FundProtocol',    display: 'github.com/SiLugang/YearRing-FundProtocol',   external: true  },
   { label: 'Email',   href: 'mailto:hello@yearringfund.com',                         display: 'hello@yearringfund.com',                      external: false },
 ]
