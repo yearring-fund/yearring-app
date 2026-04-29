@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useLocation } from 'react-router-dom'
 import {
   useAccount,
   usePublicClient,
@@ -378,6 +379,7 @@ function EmergencyExitPanel({ fbUsdcBalance }: { fbUsdcBalance: bigint }) {
 export default function Positions() {
   const { address, isConnected } = useAccount()
   const publicClient = usePublicClient()
+  const location = useLocation()
   const [depositAmt, setDepositAmt] = useState('')
   const [redeemAmt,  setRedeemAmt]  = useState('')
   const [depositErr, setDepositErr] = useState('')
@@ -606,6 +608,19 @@ export default function Positions() {
     if (redeemSuccess)  { setRedeemAmt('');  resetRedeem()  }
   }, [approveSuccess, depositSuccess, redeemSuccess])
 
+  // ── Scroll to panel from hash navigation ──────────────────────────────────
+  useEffect(() => {
+    if (!location.hash) return
+    const id = location.hash.slice(1)
+    const attempt = () => {
+      const el = document.getElementById(id)
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+    // Slight delay so layout is rendered before scrolling
+    const t = setTimeout(attempt, 150)
+    return () => clearTimeout(t)
+  }, [location.hash])
+
   // ── Error display ─────────────────────────────────────────────────────────
   useEffect(() => {
     if (approveError || depositError) setDepositErr(parseTxError(approveError ?? depositError))
@@ -680,7 +695,7 @@ export default function Positions() {
                   className="text-4xl md:text-5xl font-bold tracking-tight text-white"
                   style={{ fontFamily: "'Noto Serif', serif" }}
                 >
-                  {isConnected && holdingsUSDC > 0n ? `$${fmtUSDC(holdingsUSDC)}` : '$—'}
+                  {isConnected ? `$${fmtUSDC(holdingsUSDC)}` : '$—'}
                 </h1>
                 {isConnected && (
                   <div className="flex items-center gap-4 text-sm">
@@ -789,7 +804,7 @@ export default function Positions() {
       <div className={`grid grid-cols-1 md:grid-cols-2 gap-5 ${!isConnected ? 'hidden' : ''}`}>
 
         {/* ── Deposit ── */}
-        <div className="bg-[#f5f3ef] rounded-xl p-6 space-y-5">
+        <div id="deposit-panel" className="bg-[#f5f3ef] rounded-xl p-6 space-y-5" style={{ scrollMarginTop: '130px' }}>
           <h3
             className="text-lg font-bold text-[#1b1c1a]"
             style={{ fontFamily: "'Noto Serif', serif" }}
@@ -896,7 +911,7 @@ export default function Positions() {
         </div>
 
         {/* ── Redeem ── */}
-        <div className="bg-[#f5f3ef] rounded-xl p-6 space-y-5">
+        <div id="redeem-panel" className="bg-[#f5f3ef] rounded-xl p-6 space-y-5" style={{ scrollMarginTop: '130px' }}>
           <h3
             className="text-lg font-bold text-[#1b1c1a]"
             style={{ fontFamily: "'Noto Serif', serif" }}

@@ -232,6 +232,7 @@ export default function Home() {
   const period: Period = (localStorage.getItem('homePeriod') as Period) || 'week'
   const [activity, setActivity] = useState<ActivityItem[]>([])
   const [activityLoading, setActivityLoading] = useState(false)
+  const [balanceVisible, setBalanceVisible] = useState(false)
 
   // ── On-chain reads ────────────────────────────────────────────────────────
   const { data: reads } = useReadContracts({
@@ -400,20 +401,37 @@ export default function Home() {
       >
         Your Fund Value
       </span>
-      <h1
-        className="text-4xl md:text-6xl lg:text-7xl font-bold tracking-tight text-white"
-        style={{ fontFamily: "'Noto Serif', serif" }}
-      >
-        {isConnected
-          ? holdingsFloat > 0
-            ? `$${fmtUSD(holdingsFloat)}`
-            : '$—'
-          : '$—'}
-      </h1>
+      <div className="flex items-center justify-center gap-3">
+        <h1
+          className="text-4xl md:text-6xl lg:text-7xl font-bold tracking-tight text-white"
+          style={{ fontFamily: "'Noto Serif', serif" }}
+        >
+          {isConnected
+            ? balanceVisible
+              ? `$${fmtUSD(holdingsFloat)}`
+              : '$••••••'
+            : '$—'}
+        </h1>
+        {isConnected && (
+          <button
+            onClick={() => setBalanceVisible(v => !v)}
+            className="text-white/50 hover:text-white/90 transition-colors self-center"
+            title={balanceVisible ? 'Hide balance' : 'Show balance'}
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: '22px' }}>
+              {balanceVisible ? 'visibility' : 'visibility_off'}
+            </span>
+          </button>
+        )}
+      </div>
       <div className="flex items-center justify-center gap-2 text-white/80 text-sm font-medium">
         <span className="text-white/60 text-xs">{plLabel}</span>
         <span className="text-[#e0c29f] font-semibold">
-          {isConnected && plValue > 0 ? `+$${fmtUSD(plValue)}` : '—'}
+          {isConnected
+            ? balanceVisible
+              ? `+$${fmtUSD(plValue)}`
+              : '••••••'
+            : '—'}
         </span>
         {/* Tooltip */}
         <div className="relative group cursor-help">
@@ -462,7 +480,7 @@ export default function Home() {
         {/* Action buttons */}
         <section className="grid grid-cols-2 gap-3">
           <button
-            onClick={() => navigate('/portfolio/positions')}
+            onClick={() => navigate('/portfolio/positions#deposit-panel')}
             className="flex items-center justify-center gap-2 py-4 rounded-lg text-sm font-bold text-white hover:opacity-90 active:scale-95 transition-all"
             style={{ background: 'linear-gradient(135deg, #18281e, #2d3e33)' }}
           >
@@ -470,7 +488,7 @@ export default function Home() {
             Deposit
           </button>
           <button
-            onClick={() => navigate('/portfolio/positions')}
+            onClick={() => navigate('/portfolio/positions#redeem-panel')}
             className="flex items-center justify-center gap-2 py-4 rounded-lg text-sm font-bold text-[#18281e] bg-[#f5f3ef] hover:bg-[#eae8e4] active:scale-95 transition-all"
           >
             <span className="material-symbols-outlined text-lg">remove_circle</span>
@@ -617,23 +635,44 @@ export default function Home() {
                 style={{ backgroundImage: 'radial-gradient(circle at 80% 50%, transparent 30%, rgba(113,90,62,0.15) 31%, transparent 32%)', backgroundSize: '600px 600px', backgroundRepeat: 'no-repeat', backgroundPosition: '80% center' }} />
               <div className="relative z-10 space-y-5">
                 <div>
-                  <span className="text-[10px] font-bold tracking-[0.2em] uppercase text-white/50 block mb-1">
-                    Your Fund Value
-                  </span>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-[10px] font-bold tracking-[0.2em] uppercase text-white/50 block">
+                      Your Fund Value
+                    </span>
+                    {isConnected && (
+                      <button
+                        onClick={() => setBalanceVisible(v => !v)}
+                        className="text-white/40 hover:text-white/80 transition-colors"
+                        title={balanceVisible ? 'Hide balance' : 'Show balance'}
+                      >
+                        <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>
+                          {balanceVisible ? 'visibility' : 'visibility_off'}
+                        </span>
+                      </button>
+                    )}
+                  </div>
                   <div className="text-5xl font-bold text-white" style={{ fontFamily: "'Noto Serif', serif" }}>
-                    {isConnected && holdingsFloat > 0 ? `$${fmtUSD(holdingsFloat)}` : '$—'}
+                    {isConnected
+                      ? balanceVisible
+                        ? `$${fmtUSD(holdingsFloat)}`
+                        : '$••••••'
+                      : '$—'}
                   </div>
                   <div className="flex items-center gap-2 mt-2">
                     <span className="text-xs text-white/50">{plLabel}</span>
                     <span className="text-xs font-semibold" style={{ color: '#e0c29f' }}>
-                      {isConnected && plValue > 0 ? `+$${fmtUSD(plValue)}` : '—'}
+                      {isConnected
+                        ? balanceVisible
+                          ? `+$${fmtUSD(plValue)}`
+                          : '••••••'
+                        : '—'}
                     </span>
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   {[
-                    { label: 'Available', value: isConnected ? `$${fmtUSD(Number(formatUnits(userShares, 18)) * (pps || 1))}` : '—', icon: 'account_balance_wallet' },
-                    { label: 'Locked',    value: isConnected ? `$${fmtUSD(Number(formatUnits(lockedShares, 18)) * (pps || 1))}` : '—', icon: 'lock' },
+                    { label: 'Available', value: isConnected ? (balanceVisible ? `$${fmtUSD(Number(formatUnits(userShares, 18)) * (pps || 1))}` : '$••••') : '—', icon: 'account_balance_wallet' },
+                    { label: 'Locked',    value: isConnected ? (balanceVisible ? `$${fmtUSD(Number(formatUnits(lockedShares, 18)) * (pps || 1))}` : '$••••') : '—', icon: 'lock' },
                   ].map(({ label, value, icon }) => (
                     <div key={label} className="px-3 py-2.5 rounded-lg" style={{ background: 'rgba(255,255,255,0.07)' }}>
                       <div className="flex items-center gap-1.5 mb-1">
@@ -647,14 +686,14 @@ export default function Home() {
               </div>
               <div className="relative z-10 flex gap-3 mt-6">
                 <button
-                  onClick={() => navigate('/portfolio/positions')}
+                  onClick={() => navigate('/portfolio/positions#deposit-panel')}
                   className="flex-1 flex items-center justify-center gap-2 bg-white text-[#18281e] py-3 rounded-lg font-bold text-sm hover:bg-[#f5f3ef] transition-all active:scale-95"
                 >
                   <span className="material-symbols-outlined text-base">add_circle</span>
                   Deposit
                 </button>
                 <button
-                  onClick={() => navigate('/portfolio/positions')}
+                  onClick={() => navigate('/portfolio/positions#redeem-panel')}
                   className="flex-1 flex items-center justify-center gap-2 border border-white/20 text-white py-3 rounded-lg font-bold text-sm hover:bg-white/10 transition-all active:scale-95"
                 >
                   <span className="material-symbols-outlined text-base">remove_circle</span>
@@ -779,9 +818,9 @@ export default function Home() {
                       label: 'Available',
                       sub: 'Liquid fbUSDC',
                       value: isConnected
-                        ? `$${fmtUSD(Number(formatUnits(
-                            (reads?.[0]?.result as bigint) ?? 0n, 18
-                          )) * (pps || 1))}`
+                        ? balanceVisible
+                          ? `$${fmtUSD(Number(formatUnits((reads?.[0]?.result as bigint) ?? 0n, 18)) * (pps || 1))}`
+                          : '$••••••'
                         : '—',
                       color: '#18281e',
                     },
@@ -790,7 +829,9 @@ export default function Home() {
                       label: 'Locked',
                       sub: 'In lock positions',
                       value: isConnected
-                        ? `$${fmtUSD(Number(formatUnits(lockedShares, 18)) * (pps || 1))}`
+                        ? balanceVisible
+                          ? `$${fmtUSD(Number(formatUnits(lockedShares, 18)) * (pps || 1))}`
+                          : '$••••••'
                         : '—',
                       color: '#715a3e',
                     },
