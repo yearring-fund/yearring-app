@@ -18,8 +18,8 @@ export function formatShares(raw: bigint, decimals = 4): string {
   })
 }
 
-// RWT: 18 decimals
-export function formatRWT(raw: bigint, decimals = 2): string {
+// Points: 18 decimals
+export function formatPoints(raw: bigint, decimals = 2): string {
   const n = Number(raw) / 1e18
   return n.toLocaleString('en-US', {
     minimumFractionDigits: decimals,

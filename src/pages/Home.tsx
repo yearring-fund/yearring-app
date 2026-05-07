@@ -238,23 +238,23 @@ export default function Home() {
   const { data: reads } = useReadContracts({
     contracts: [
       {
-        address: ADDR.FundVaultV01 as Address,
+        address: ADDR.YearRingCoreVaultV01 as Address,
         abi: VAULT_ABI,
         functionName: 'balanceOf',
         args: [address ?? '0x0000000000000000000000000000000000000000'],
       },
       {
-        address: ADDR.FundVaultV01 as Address,
+        address: ADDR.YearRingCoreVaultV01 as Address,
         abi: VAULT_ABI,
         functionName: 'totalAssets',
       },
       {
-        address: ADDR.FundVaultV01 as Address,
+        address: ADDR.YearRingCoreVaultV01 as Address,
         abi: VAULT_ABI,
         functionName: 'systemMode',
       },
       {
-        address: ADDR.FundVaultV01 as Address,
+        address: ADDR.YearRingCoreVaultV01 as Address,
         abi: VAULT_ABI,
         functionName: 'pricePerShare',
       },
@@ -296,7 +296,7 @@ export default function Home() {
 
   // Convert to USDC
   const { data: holdingsRaw } = useReadContract({
-    address: ADDR.FundVaultV01 as Address,
+    address: ADDR.YearRingCoreVaultV01 as Address,
     abi: VAULT_ABI,
     functionName: 'convertToAssets',
     args: [totalShares > 0n ? totalShares : 1000000000000n],
@@ -352,9 +352,9 @@ export default function Home() {
 
       const [deposits, redeems] = await Promise.all([
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        publicClient.getLogs({ address: ADDR.FundVaultV01 as Address, topics: [TRANSFER_SIG, ZERO, padded],   fromBlock: from, toBlock: 'latest' } as any),
+        publicClient.getLogs({ address: ADDR.YearRingCoreVaultV01 as Address, topics: [TRANSFER_SIG, ZERO, padded],   fromBlock: from, toBlock: 'latest' } as any),
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        publicClient.getLogs({ address: ADDR.FundVaultV01 as Address, topics: [TRANSFER_SIG, padded, ZERO],   fromBlock: from, toBlock: 'latest' } as any),
+        publicClient.getLogs({ address: ADDR.YearRingCoreVaultV01 as Address, topics: [TRANSFER_SIG, padded, ZERO],   fromBlock: from, toBlock: 'latest' } as any),
       ])
 
       const raw: ActivityItem[] = [
@@ -743,7 +743,7 @@ export default function Home() {
                 </div>
               </div>
               <div className="pt-4 flex items-center gap-3 flex-wrap" style={{ borderTop: '1px solid #e8e8e2' }}>
-                <a href={`https://basescan.org/address/${ADDR.FundVaultV01}`}
+                <a href={`https://basescan.org/address/${ADDR.YearRingCoreVaultV01}`}
                   target="_blank" rel="noopener"
                   className="text-[10px] font-bold text-[#715a3e] hover:underline flex items-center gap-0.5">
                   BaseScan ↗
@@ -816,7 +816,7 @@ export default function Home() {
                     {
                       icon: 'account_balance_wallet',
                       label: 'Available',
-                      sub: 'Liquid fbUSDC',
+                      sub: 'Liquid yrCORE',
                       value: isConnected
                         ? balanceVisible
                           ? `$${fmtUSD(Number(formatUnits((reads?.[0]?.result as bigint) ?? 0n, 18)) * (pps || 1))}`

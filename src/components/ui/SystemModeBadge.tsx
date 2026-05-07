@@ -15,7 +15,7 @@ const modeDot: Record<string, string> = {
 
 export default function SystemModeBadge() {
   const { data: modeRaw } = useReadContract({
-    address: ADDR.FundVaultV01,
+    address: ADDR.YearRingCoreVaultV01,
     abi: VAULT_ABI,
     functionName: 'systemMode',
   })

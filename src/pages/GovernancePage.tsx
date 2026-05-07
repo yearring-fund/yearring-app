@@ -34,7 +34,7 @@ type Proposal = {
 
 function truncate(addr: string) { return addr.slice(0, 6) + '…' + addr.slice(-4) }
 
-function fmtRWT(n: bigint) {
+function fmtPoints(n: bigint) {
   return (Number(n) / 1e18).toLocaleString('en-US', { maximumFractionDigits: 0 })
 }
 
@@ -86,15 +86,15 @@ function VoteBar({ p }: { p: Proposal }) {
       <div className="flex gap-4 text-[10px] text-[#434844]/60">
         <span className="flex items-center gap-1">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-          For {fmtRWT(p.forVotes)} RWT
+          For {fmtPoints(p.forVotes)} Points
         </span>
         <span className="flex items-center gap-1">
           <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
-          Against {fmtRWT(p.againstVotes)} RWT
+          Against {fmtPoints(p.againstVotes)} Points
         </span>
         <span className="flex items-center gap-1">
           <span className="w-1.5 h-1.5 rounded-full bg-[#c3c8c2]" />
-          Abstain {fmtRWT(p.abstainVotes)} RWT
+          Abstain {fmtPoints(p.abstainVotes)} Points
         </span>
       </div>
     </div>
@@ -190,7 +190,7 @@ function ProposalCard({
       {/* Insufficient power */}
       {!canVote && !hasVoted && state === 'Active' && (
         <div className="text-[11px] text-[#434844]/50">
-          Need ≥ {fmtRWT(threshold)} RWT to vote · you have {fmtRWT(votingPower)} RWT
+          Need ≥ {fmtPoints(threshold)} Points to vote · you have {fmtPoints(votingPower)} Points
         </div>
       )}
 
@@ -358,14 +358,14 @@ export default function GovernancePage() {
               Governance
             </h2>
             <p className="mt-1 text-xs text-[#434844]/60">
-              Signal your preferences. RWT holders shape protocol parameters.
+              Signal your preferences. Points holders shape protocol parameters.
             </p>
           </div>
           {isConnected && (
             <div className="text-right flex-shrink-0">
               <div className="text-[10px] text-[#434844]/50 uppercase tracking-wide">Your Voting Power</div>
-              <div className="text-sm font-bold text-[#1b1c1a]">{fmtRWT(votingPower)} RWT</div>
-              <div className="text-[10px] text-[#434844]/40">Threshold: {fmtRWT(threshold)} RWT</div>
+              <div className="text-sm font-bold text-[#1b1c1a]">{fmtPoints(votingPower)} Points</div>
+              <div className="text-[10px] text-[#434844]/40">Threshold: {fmtPoints(threshold)} Points</div>
             </div>
           )}
         </div>
@@ -391,12 +391,12 @@ export default function GovernancePage() {
                 </span>
               </div>
               <p className="text-xs text-[#434844]/70 leading-relaxed">
-                Governance on YearRing is a signal layer — not a multisig. RWT holders vote on protocol parameter proposals. Outcomes inform the core team's decisions; they do not execute autonomously. All admin operations still go through a 24-hour timelock.
+                Governance on YearRing is a signal layer — not a multisig. Points holders vote on protocol parameter proposals. Outcomes inform the core team's decisions; they do not execute autonomously. All admin operations still go through a 24-hour timelock.
               </p>
               <div className="grid grid-cols-1 gap-2">
                 {[
-                  ['lock', 'Earn RWT by locking fbUSDC shares in the Locks tab. Longer locks earn more.'],
-                  ['how_to_vote', 'Hold enough RWT to meet the voting threshold, then cast For / Against / Abstain.'],
+                  ['lock', 'Earn Points by locking yrCORE shares in the Locks tab. Longer locks earn more.'],
+                  ['how_to_vote', 'Hold enough Points to meet the voting threshold, then cast For / Against / Abstain.'],
                   ['tune', 'Proposal types: Reward Rate, Fee Discount, Inactivity Threshold, General.'],
                 ].map(([icon, text]) => (
                   <div key={icon} className="flex items-start gap-2.5 px-3 py-2.5 rounded-lg" style={{ background: '#fff', border: '1px solid #e8e8e2' }}>
@@ -443,12 +443,12 @@ export default function GovernancePage() {
                     </span>
                   </div>
                   <p className="text-xs text-[#434844]/70 leading-relaxed">
-                    Governance on YearRing is a signal layer — not a multisig. RWT holders vote on protocol parameter proposals. Outcomes inform the core team's decisions; they do not execute autonomously. All admin operations on the protocol still go through a 24-hour timelock.
+                    Governance on YearRing is a signal layer — not a multisig. Points holders vote on protocol parameter proposals. Outcomes inform the core team's decisions; they do not execute autonomously. All admin operations on the protocol still go through a 24-hour timelock.
                   </p>
                   <div className="grid grid-cols-1 gap-2">
                     {[
-                      ['lock', 'Earn RWT by locking fbUSDC shares in the Locks tab. Longer locks earn more.'],
-                      ['how_to_vote', `You need ≥ ${fmtRWT(threshold)} RWT to cast a vote on any active proposal.`],
+                      ['lock', 'Earn Points by locking yrCORE shares in the Locks tab. Longer locks earn more.'],
+                      ['how_to_vote', `You need ≥ ${fmtPoints(threshold)} Points to cast a vote on any active proposal.`],
                       ['tune', 'Proposal types: Reward Rate, Fee Discount, Inactivity Threshold, General.'],
                     ].map(([icon, text]) => (
                       <div key={icon} className="flex items-start gap-2.5 px-3 py-2.5 rounded-lg" style={{ background: '#fff', border: '1px solid #e8e8e2' }}>

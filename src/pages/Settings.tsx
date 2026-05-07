@@ -24,15 +24,15 @@ const BOTTOM_NAV = [
 function truncate(addr: string) { return addr.slice(0, 6) + '…' + addr.slice(-4) }
 
 const CONTRACTS = [
-  { name: 'Fund Vault',            key: 'FundVaultV01'         },
-  { name: 'Lock Ledger',           key: 'LockLedgerV02'        },
-  { name: 'Lock Reward Manager',   key: 'LockRewardManagerV02' },
-  { name: 'Lock Benefit',          key: 'LockBenefitV02'       },
-  { name: 'Beneficiary Module',    key: 'BeneficiaryModuleV02' },
-  { name: 'Reward Token (RWT)',     key: 'RewardToken'          },
-  { name: 'Strategy Manager',      key: 'StrategyManagerV01'   },
-  { name: 'Metrics Layer',         key: 'MetricsLayerV02'      },
-  { name: 'Governance Signal',     key: 'GovernanceSignalV02'  },
+  { name: 'Core Vault',                  key: 'YearRingCoreVaultV01'       },
+  { name: 'Lock Ledger',                 key: 'LockLedgerV02'              },
+  { name: 'Lock Points Rebate Manager',  key: 'LockPointsRebateManagerV02' },
+  { name: 'Lock Benefit',                key: 'LockBenefitV02'             },
+  { name: 'Beneficiary Module',          key: 'BeneficiaryModuleV02'       },
+  { name: 'Points Token',                key: 'PointsToken'                },
+  { name: 'Strategy Manager',            key: 'StrategyManagerV01'         },
+  { name: 'Metrics Layer',               key: 'MetricsLayerV02'            },
+  { name: 'Governance Signal',           key: 'GovernanceSignalV02'        },
 ] as const
 
 function shortAddr(addr: string) {
@@ -313,7 +313,7 @@ export default function Settings() {
           <div style={{ height: '1px', background: '#e8e8e2' }} />
           <div className="flex items-center flex-wrap gap-x-4 gap-y-2 pt-1">
             <a
-              href={`https://basescan.org/address/${ADDR.FundVaultV01}`}
+              href={`https://basescan.org/address/${ADDR.YearRingCoreVaultV01}`}
               target="_blank"
               rel="noreferrer"
               className="flex items-center gap-1 text-xs text-[#434844]/50 hover:text-[#434844] transition-colors"

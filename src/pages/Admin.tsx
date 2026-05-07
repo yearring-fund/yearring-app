@@ -108,7 +108,7 @@ export default function Admin() {
   const { address, isConnected } = useAccount()
 
   const { data: isAdmin, isLoading: isAdminLoading } = useReadContract({
-    address: ADDR.FundVaultV01,
+    address: ADDR.YearRingCoreVaultV01,
     abi: VAULT_ABI,
     functionName: 'hasRole',
     args: [DEFAULT_ADMIN_ROLE, address as Address],
@@ -142,7 +142,7 @@ export default function Admin() {
         <p className="text-sm text-on-surface-variant">
           Connected address does not hold{' '}
           <span className="font-mono text-xs bg-surface-container px-1.5 py-0.5 rounded">DEFAULT_ADMIN_ROLE</span>{' '}
-          on FundVaultV01.
+          on YearRingCoreVaultV01.
         </p>
         <p className="font-mono text-xs text-on-surface-variant/60 break-all">{address}</p>
       </div>
@@ -168,23 +168,23 @@ function AdminConsole() {
   // ── Read protocol state ─────────────────────────────────────────────────────
   const { data, refetch } = useReadContracts({
     contracts: [
-      { address: ADDR.FundVaultV01, abi: VAULT_ABI, functionName: 'totalAssets' },
-      { address: ADDR.FundVaultV01, abi: VAULT_ABI, functionName: 'systemMode' },
-      { address: ADDR.FundVaultV01, abi: VAULT_ABI, functionName: 'depositsPaused' },
-      { address: ADDR.FundVaultV01, abi: VAULT_ABI, functionName: 'redeemsPaused' },
-      { address: ADDR.FundVaultV01, abi: VAULT_ABI, functionName: 'mgmtFeeBpsPerMonth' },
-      { address: ADDR.FundVaultV01, abi: VAULT_ABI, functionName: 'reserveRatioBps' },
+      { address: ADDR.YearRingCoreVaultV01, abi: VAULT_ABI, functionName: 'totalAssets' },
+      { address: ADDR.YearRingCoreVaultV01, abi: VAULT_ABI, functionName: 'systemMode' },
+      { address: ADDR.YearRingCoreVaultV01, abi: VAULT_ABI, functionName: 'depositsPaused' },
+      { address: ADDR.YearRingCoreVaultV01, abi: VAULT_ABI, functionName: 'redeemsPaused' },
+      { address: ADDR.YearRingCoreVaultV01, abi: VAULT_ABI, functionName: 'mgmtFeeBpsPerMonth' },
+      { address: ADDR.YearRingCoreVaultV01, abi: VAULT_ABI, functionName: 'reserveRatioBps' },
       { address: ADDR.StrategyManagerV01, abi: STRAT_MGR_ABI, functionName: 'totalManagedAssets' },
       { address: ADDR.StrategyManagerV01, abi: STRAT_MGR_ABI, functionName: 'idleUnderlying' },
       { address: ADDR.StrategyManagerV01, abi: STRAT_MGR_ABI, functionName: 'paused' },
       // 9 — lockLedger
-      { address: ADDR.FundVaultV01, abi: VAULT_ABI, functionName: 'lockLedger' },
+      { address: ADDR.YearRingCoreVaultV01, abi: VAULT_ABI, functionName: 'lockLedger' },
       // 10 — externalTransfersEnabled
-      { address: ADDR.FundVaultV01, abi: VAULT_ABI, functionName: 'externalTransfersEnabled' },
+      { address: ADDR.YearRingCoreVaultV01, abi: VAULT_ABI, functionName: 'externalTransfersEnabled' },
       // 11 — strategy address
       { address: ADDR.StrategyManagerV01, abi: STRAT_MGR_ABI, functionName: 'strategy' },
       // 12 — treasury address
-      { address: ADDR.FundVaultV01, abi: VAULT_ABI, functionName: 'treasury' },
+      { address: ADDR.YearRingCoreVaultV01, abi: VAULT_ABI, functionName: 'treasury' },
     ],
   })
 
@@ -209,7 +209,7 @@ function AdminConsole() {
   const { data: feeData, refetch: refetchFee } = useReadContracts({
     contracts: [
       {
-        address: ADDR.FundVaultV01,
+        address: ADDR.YearRingCoreVaultV01,
         abi: VAULT_ABI,
         functionName: 'balanceOf',
         args: [treasuryAddr ?? '0x0000000000000000000000000000000000000000'],
@@ -220,7 +220,7 @@ function AdminConsole() {
   const treasuryShares = feeData?.[0]?.result as bigint | undefined
 
   const { data: feeUsdc } = useReadContract({
-    address: ADDR.FundVaultV01,
+    address: ADDR.YearRingCoreVaultV01,
     abi: VAULT_ABI,
     functionName: 'convertToAssets',
     args: [treasuryShares ?? 0n],
@@ -274,12 +274,12 @@ function AdminConsole() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-on-surface">Admin Console</h1>
           <p className="text-sm text-on-surface-variant mt-1">
-            Protocol management — FundVaultV01 &amp; StrategyManagerV01
+            Protocol management — YearRingCoreVaultV01 &amp; StrategyManagerV01
           </p>
         </div>
         <div className="flex flex-col items-end gap-1 shrink-0 mt-1">
           {([
-            { label: 'FundVaultV01',      addr: ADDR.FundVaultV01      },
+            { label: 'YearRingCoreVaultV01',      addr: ADDR.YearRingCoreVaultV01      },
             { label: 'StrategyManagerV01', addr: ADDR.StrategyManagerV01 },
           ] as const).map(({ label, addr }) => (
             <a
@@ -334,14 +334,14 @@ function AdminConsole() {
         <ActionRow label="Deposits" description="Pause or unpause new deposits into the vault">
           <button
             disabled={isLoading}
-            onClick={() => send('pauseDeposits', () => writeContract({ address: ADDR.FundVaultV01, abi: VAULT_ABI, functionName: 'pauseDeposits' }))}
+            onClick={() => send('pauseDeposits', () => writeContract({ address: ADDR.YearRingCoreVaultV01, abi: VAULT_ABI, functionName: 'pauseDeposits' }))}
             className="px-4 py-2 rounded-lg text-sm font-semibold bg-error text-on-error hover:opacity-90 disabled:opacity-40 transition-opacity"
           >
             Pause
           </button>
           <button
             disabled={isLoading}
-            onClick={() => send('unpauseDeposits', () => writeContract({ address: ADDR.FundVaultV01, abi: VAULT_ABI, functionName: 'unpauseDeposits' }))}
+            onClick={() => send('unpauseDeposits', () => writeContract({ address: ADDR.YearRingCoreVaultV01, abi: VAULT_ABI, functionName: 'unpauseDeposits' }))}
             className="px-4 py-2 rounded-lg text-sm font-semibold bg-primary text-on-primary hover:opacity-90 disabled:opacity-40 transition-opacity"
           >
             Unpause
@@ -350,14 +350,14 @@ function AdminConsole() {
         <ActionRow label="Redeems" description="Pause or unpause redemptions from the vault">
           <button
             disabled={isLoading}
-            onClick={() => send('pauseRedeems', () => writeContract({ address: ADDR.FundVaultV01, abi: VAULT_ABI, functionName: 'pauseRedeems' }))}
+            onClick={() => send('pauseRedeems', () => writeContract({ address: ADDR.YearRingCoreVaultV01, abi: VAULT_ABI, functionName: 'pauseRedeems' }))}
             className="px-4 py-2 rounded-lg text-sm font-semibold bg-error text-on-error hover:opacity-90 disabled:opacity-40 transition-opacity"
           >
             Pause
           </button>
           <button
             disabled={isLoading}
-            onClick={() => send('unpauseRedeems', () => writeContract({ address: ADDR.FundVaultV01, abi: VAULT_ABI, functionName: 'unpauseRedeems' }))}
+            onClick={() => send('unpauseRedeems', () => writeContract({ address: ADDR.YearRingCoreVaultV01, abi: VAULT_ABI, functionName: 'unpauseRedeems' }))}
             className="px-4 py-2 rounded-lg text-sm font-semibold bg-primary text-on-primary hover:opacity-90 disabled:opacity-40 transition-opacity"
           >
             Unpause
@@ -385,7 +385,7 @@ function AdminConsole() {
             onClick={() =>
               send('setMode', () =>
                 writeContract({
-                  address: ADDR.FundVaultV01,
+                  address: ADDR.YearRingCoreVaultV01,
                   abi: VAULT_ABI,
                   functionName: 'setMode',
                   args: [Number(newMode)],
@@ -422,7 +422,7 @@ function AdminConsole() {
             onClick={() =>
               send('setMgmtFee', () =>
                 writeContract({
-                  address: ADDR.FundVaultV01,
+                  address: ADDR.YearRingCoreVaultV01,
                   abi: VAULT_ABI,
                   functionName: 'setMgmtFeeBpsPerMonth',
                   args: [BigInt(newMgmtFee)],
@@ -452,7 +452,7 @@ function AdminConsole() {
             onClick={() =>
               send('setReserveRatio', () =>
                 writeContract({
-                  address: ADDR.FundVaultV01,
+                  address: ADDR.YearRingCoreVaultV01,
                   abi: VAULT_ABI,
                   functionName: 'setReserveRatioBps',
                   args: [BigInt(newReserveRatio)],
@@ -470,7 +470,7 @@ function AdminConsole() {
             onClick={() =>
               send('accrueManagementFee', () =>
                 writeContract({
-                  address: ADDR.FundVaultV01,
+                  address: ADDR.YearRingCoreVaultV01,
                   abi: VAULT_ABI,
                   functionName: 'accrueManagementFee',
                 })
@@ -522,7 +522,7 @@ function AdminConsole() {
             onClick={() =>
               send('collectFees', () =>
                 writeContract({
-                  address: ADDR.FundVaultV01,
+                  address: ADDR.YearRingCoreVaultV01,
                   abi: VAULT_ABI,
                   functionName: 'redeem',
                   args: [treasuryShares!, treasuryAddr!, treasuryAddr!],
@@ -562,7 +562,7 @@ function AdminConsole() {
             onClick={() =>
               send('addToAllowlist', () =>
                 writeContract({
-                  address: ADDR.FundVaultV01,
+                  address: ADDR.YearRingCoreVaultV01,
                   abi: VAULT_ABI,
                   functionName: 'addToAllowlist',
                   args: [allowlistAddr as Address],
@@ -578,7 +578,7 @@ function AdminConsole() {
             onClick={() =>
               send('removeFromAllowlist', () =>
                 writeContract({
-                  address: ADDR.FundVaultV01,
+                  address: ADDR.YearRingCoreVaultV01,
                   abi: VAULT_ABI,
                   functionName: 'removeFromAllowlist',
                   args: [allowlistAddr as Address],
@@ -614,7 +614,7 @@ function AdminConsole() {
             onClick={() =>
               send('transferToStrategyManager', () =>
                 writeContract({
-                  address: ADDR.FundVaultV01,
+                  address: ADDR.YearRingCoreVaultV01,
                   abi: VAULT_ABI,
                   functionName: 'transferToStrategyManager',
                   args: [parseUnits(transferAmt, 6)],
@@ -808,7 +808,7 @@ function AdminConsole() {
                     onClick={() =>
                       send('openExitRound', () =>
                         writeContract({
-                          address: ADDR.FundVaultV01,
+                          address: ADDR.YearRingCoreVaultV01,
                           abi: VAULT_ABI,
                           functionName: 'openExitModeRound',
                           args: [parseUnits(exitRoundAmt, 6)],
@@ -851,7 +851,7 @@ function AdminConsole() {
             onClick={() =>
               send('closeExitRound', () =>
                 writeContract({
-                  address: ADDR.FundVaultV01,
+                  address: ADDR.YearRingCoreVaultV01,
                   abi: VAULT_ABI,
                   functionName: 'closeExitModeRound',
                 })
@@ -927,7 +927,7 @@ function AdminConsole() {
                     onClick={() =>
                       send('enableExternalTransfers', () =>
                         writeContract({
-                          address: ADDR.FundVaultV01,
+                          address: ADDR.YearRingCoreVaultV01,
                           abi: VAULT_ABI,
                           functionName: 'setExternalTransfersEnabled',
                           args: [true],
@@ -943,7 +943,7 @@ function AdminConsole() {
                     onClick={() =>
                       send('disableExternalTransfers', () =>
                         writeContract({
-                          address: ADDR.FundVaultV01,
+                          address: ADDR.YearRingCoreVaultV01,
                           abi: VAULT_ABI,
                           functionName: 'setExternalTransfersEnabled',
                           args: [false],

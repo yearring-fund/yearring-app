@@ -1,19 +1,21 @@
 import { parseAbi, type Address } from 'viem'
 
-// ── Deployed addresses (Base Mainnet) ─────────────────────────────────────────
+// ── Deployed addresses (Base Mainnet — Closed Beta) ───────────────────────────
+// Source: deployments/closed_beta_base.json (2026-05-07)
 export const ADDR = {
-  USDC:                 '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' as Address,
-  FundVaultV01:         '0x9dD61ee543a9C51aBe7B26A89687C9aEeea98a54' as Address,
-  RewardToken:          '0xeAb54e7cFbE5d35ea5203854B44C8516201534A9' as Address,
-  LockLedgerV02:        '0x2FC1d315c67AE3Df2a062f7130d58FaA6c0ce9EF' as Address,
-  LockBenefitV02:       '0xeFcFc0Cdfd20786094D0f62297FF5C7B6358E481' as Address,
-  LockRewardManagerV02: '0x129aEce0C7659575Ae7aB4e78bfe4ca8946B962a' as Address,
-  BeneficiaryModuleV02: '0x6d463f7d78Ca3a1809971D5A43E5F57066d325cF' as Address,
-  UserStateEngineV02:   '0x19B09cee3534fA8fC631035e4Fe75e2C67e7637d' as Address,
-  MetricsLayerV02:      '0x4937abE8e01dE6a081CF03b59151733E0Fde63E2' as Address,
-  GovernanceSignalV02:  '0x9BE5636943d7BfF57ACA6047Cf945FD770CcC7d0' as Address,
-  ClaimLedger:          '0x5CF9b8EC75314115EDDE5Dd332C193995Dd55234' as Address,
-  StrategyManagerV01:   '0xa44d3b9b0ECD6fFa4bD646957468c0B5Bfa64A54' as Address,
+  USDC:                       '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' as Address,
+  YearRingCoreVaultV01:       '0xC4A6244A38706B33fF2515799aB803Bd66321CC2' as Address,
+  TreasuryV02:                '0x8cF67610c23eb2cb6292D601e912C997f23eC6A1' as Address,
+  PointsToken:                '0x8C8c0Fb048227821e00e473dEe0Fc19A7E36F042' as Address,
+  LockLedgerV02:              '0xE76751af3837c3b19caF77c10bde0673e6f3afAb' as Address,
+  LockBenefitV02:             '0x96b30708EDB3d492d6Ef9ABe2d2847FDBE45DCE5' as Address,
+  LockPointsRebateManagerV02: '0xee05499C9B6Da23f357B9742049f90041E90fb2B' as Address,
+  BeneficiaryModuleV02:       '0x753c5a9740d7e1C5A4C28189c1A5C4b072A1B369' as Address,
+  UserStateEngineV02:         '0x96AffDaf6b23875398C2eDd0a0Acf11cc78106e9' as Address,
+  MetricsLayerV02:            '0x18AD46989613E4c5F63fA4FEbc022F2d04a9FA9C' as Address,
+  GovernanceSignalV02:        '0x968FCe2C98644893D8FfF14144b136F24bb9Bd4B' as Address,
+  ClaimLedger:                '0x7A03aa022432e83bae525B186e42B160f2043239' as Address,
+  StrategyManagerV01:         '0x54F1cB9D795b86b224dD16d9a4edDb073B0F0579' as Address,
 } as const
 
 // ── ABIs (parseAbi → proper typed ABI objects) ────────────────────────────────
@@ -78,7 +80,7 @@ export const STRAT_MGR_ABI = parseAbi([
   'function strategy() view returns (address)',
 ])
 
-export const RWT_ABI = parseAbi([
+export const POINTS_ABI = parseAbi([
   'function balanceOf(address account) view returns (uint256)',
   'function approve(address spender, uint256 amount) returns (bool)',
   'function allowance(address owner, address spender) view returns (uint256)',
@@ -97,13 +99,13 @@ export const BENEFIT_ABI = parseAbi([
 ])
 
 export const LOCK_MGR_ABI = parseAbi([
-  'function lockWithReward(uint256 shares, uint64 duration) returns (uint256)',
+  'function lockWithPoints(uint256 shares, uint64 duration) returns (uint256)',
   'function lockWithPermit(uint256 shares, uint64 duration, uint256 deadline, uint8 v, bytes32 r, bytes32 s) returns (uint256)',
   'function claimRebate(uint256 lockId) returns (uint256)',
-  'function earlyExitWithReturn(uint256 lockId)',
+  'function earlyExit(uint256 lockId)',
   'function previewRebate(uint256 lockId) view returns (uint256)',
-  'function issuedRewardTokens(uint256 lockId) view returns (uint256)',
-  'function checkEarlyExit(uint256 lockId) view returns (uint256 rebateShares, uint256 tokensToReturn, uint256 treasuryShareBalance, uint256 treasuryShareAllowance, uint256 userTokenBalance, uint256 userTokenAllowance)',
+  'function issuedPoints(uint256 lockId) view returns (uint256)',
+  'function checkEarlyExit(uint256 lockId) view returns (uint256 rebateShares, uint256 pointsToReturn, uint256 treasuryShareBalance, uint256 treasuryShareAllowance, uint256 userPointsBalance, uint256 userPointsAllowance)',
 ])
 
 export const BENEFICIARY_ABI = parseAbi([

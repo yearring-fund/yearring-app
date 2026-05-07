@@ -10,7 +10,7 @@ import {
 } from 'wagmi'
 import { parseUnits, formatUnits, type Address } from 'viem'
 import {
-  ADDR, VAULT_ABI, USDC_ABI, AAVE_POOL_ABI, AAVE_V3_POOL_BASE, LEDGER_ABI, STRAT_MGR_ABI,
+  ADDR, VAULT_ABI, USDC_ABI, AAVE_POOL_ABI, AAVE_V3_POOL_BASE, LEDGER_ABI, STRAT_MGR_ABI, POINTS_ABI,
 } from '../../lib/contracts'
 import { parseTxError, parseReadError } from '../../lib/txError'
 import { Sk } from '../../components/ui/Skeleton'
@@ -49,7 +49,8 @@ function Sparkline({ points }: { points: PpsPoint[] }) {
 // ── Helpers ────────────────────────────────────────────────────────────────
 function fmtUSDC(n: bigint)  { return Number(formatUnits(n, 6)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }
 function fmtShares(n: bigint){ return Number(formatUnits(n, 18)).toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 }) }
-function fmtPPS(n: bigint)   { return Number(formatUnits(n, 6)).toFixed(6) }
+function fmtPPS(n: bigint)    { return Number(formatUnits(n, 6)).toFixed(6) }
+function fmtPoints(n: bigint){ return Number(formatUnits(n, 18)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }
 
 function safeParse(val: string, decimals: number): bigint {
   try { return val && Number(val) > 0 ? parseUnits(val, decimals) : 0n }
@@ -102,7 +103,7 @@ function StructureFlow({ reservePct }: { reservePct: number }) {
   type FlowNode = { icon: string; label: string; sub: string; accent: string; bg: string }
   const nodes: FlowNode[] = [
     { icon: 'person',          label: 'Depositor',    sub: 'USDC',             accent: '#715a3e', bg: 'rgba(113,90,62,0.07)' },
-    { icon: 'account_balance', label: 'fbUSDC Vault', sub: 'share accounting', accent: '#18281e', bg: 'rgba(24,40,30,0.06)'  },
+    { icon: 'account_balance', label: 'yrCORE Vault', sub: 'share accounting', accent: '#18281e', bg: 'rgba(24,40,30,0.06)'  },
     { icon: 'trending_up',     label: 'Aave V3',      sub: 'lending yield',    accent: '#18281e', bg: 'rgba(24,40,30,0.06)'  },
   ]
   return (
@@ -188,7 +189,7 @@ function EmergencyExitPanel({ fbUsdcBalance }: { fbUsdcBalance: bigint }) {
   const [txErr,  setTxErr]   = useState('')
 
   const { data: roundId, refetch: refetchRoundId } = useReadContract({
-    address: ADDR.FundVaultV01 as Address, abi: VAULT_ABI,
+    address: ADDR.YearRingCoreVaultV01 as Address, abi: VAULT_ABI,
     functionName: 'currentRoundId',
     query: { refetchInterval: 10_000 },
   })
@@ -197,7 +198,7 @@ function EmergencyExitPanel({ fbUsdcBalance }: { fbUsdcBalance: bigint }) {
   const roundEnabled = !!rid && rid > 0n
 
   const { data: roundData, refetch: refetchRound } = useReadContract({
-    address: ADDR.FundVaultV01 as Address, abi: VAULT_ABI,
+    address: ADDR.YearRingCoreVaultV01 as Address, abi: VAULT_ABI,
     functionName: 'exitRounds', args: [rid as bigint],
     query: { enabled: roundEnabled },
   })
@@ -205,15 +206,15 @@ function EmergencyExitPanel({ fbUsdcBalance }: { fbUsdcBalance: bigint }) {
   const round = roundData as ExitRound | undefined
 
   const { data: claimed, refetch: refetchClaimed } = useReadContract({
-    address: ADDR.FundVaultV01 as Address, abi: VAULT_ABI,
+    address: ADDR.YearRingCoreVaultV01 as Address, abi: VAULT_ABI,
     functionName: 'roundSharesClaimed',
     args: [rid as bigint, address as Address],
     query: { enabled: roundEnabled && !!address },
   })
 
-  // snapshot balance = user's fbUSDC at the moment Emergency Exit was declared
+  // snapshot balance = user's yrCORE at the moment Emergency Exit was declared
   const { data: snapBalRaw } = useReadContract({
-    address: ADDR.FundVaultV01 as Address, abi: VAULT_ABI,
+    address: ADDR.YearRingCoreVaultV01 as Address, abi: VAULT_ABI,
     functionName: 'balanceOfAt',
     args: [address as Address, round?.snapshotId as bigint],
     query: { enabled: !!address && !!round && round.snapshotId > 0n },
@@ -249,7 +250,7 @@ function EmergencyExitPanel({ fbUsdcBalance }: { fbUsdcBalance: bigint }) {
     setTxErr('')
     try {
       const hash = await writeContractAsync({
-        address: ADDR.FundVaultV01 as Address, abi: VAULT_ABI,
+        address: ADDR.YearRingCoreVaultV01 as Address, abi: VAULT_ABI,
         functionName: 'claimExitAssets',
         args: [rid, parsedBurn],
       })
@@ -274,7 +275,7 @@ function EmergencyExitPanel({ fbUsdcBalance }: { fbUsdcBalance: bigint }) {
 
       <div className="px-5 py-4 space-y-4" style={{ background: '#fef2f2' }}>
         <p className="text-xs text-red-800 leading-relaxed">
-          Normal deposits and redeems are suspended. Your pro-rata share of available USDC can be claimed by burning fbUSDC shares below. Your eligibility is fixed at the snapshot taken when Emergency Exit was declared.
+          Normal deposits and redeems are suspended. Your pro-rata share of available USDC can be claimed by burning yrCORE shares below. Your eligibility is fixed at the snapshot taken when Emergency Exit was declared.
         </p>
 
         {noRound ? (
@@ -291,22 +292,22 @@ function EmergencyExitPanel({ fbUsdcBalance }: { fbUsdcBalance: bigint }) {
             <div>
               <p className="text-xs font-semibold text-[#1b1c1a]">All eligible shares claimed</p>
               <p className="text-[11px] text-[#434844]/50 mt-0.5">
-                You claimed {fmtShares(claimedAmt)} fbUSDC in this round.
+                You claimed {fmtShares(claimedAmt)} yrCORE in this round.
               </p>
             </div>
           </div>
         ) : noEligible ? (
           <div className="bg-white rounded-lg px-4 py-3 text-xs text-[#434844]/70">
-            Your wallet held no fbUSDC at the snapshot time and is not eligible in this round.
+            Your wallet held no yrCORE at the snapshot time and is not eligible in this round.
           </div>
         ) : round ? (
           <div className="space-y-3">
             {/* Round stats */}
             <div className="grid grid-cols-2 gap-2">
               {[
-                { label: 'Your snapshot balance', value: `${fmtShares(snapBal)} fbUSDC` },
-                { label: 'Already claimed',        value: `${fmtShares(claimedAmt)} fbUSDC` },
-                { label: 'Remaining eligible',     value: `${fmtShares(remaining)} fbUSDC`,  highlight: remaining > 0n },
+                { label: 'Your snapshot balance', value: `${fmtShares(snapBal)} yrCORE` },
+                { label: 'Already claimed',        value: `${fmtShares(claimedAmt)} yrCORE` },
+                { label: 'Remaining eligible',     value: `${fmtShares(remaining)} yrCORE`,  highlight: remaining > 0n },
                 { label: 'Round available',        value: `$${fmtUSDC(round.availableAssets)} USDC` },
               ].map(({ label, value, highlight }) => (
                 <div key={label} className="bg-white rounded-lg px-3 py-2.5">
@@ -321,7 +322,7 @@ function EmergencyExitPanel({ fbUsdcBalance }: { fbUsdcBalance: bigint }) {
               <div className="flex items-center justify-between mb-1.5">
                 <span className="text-[10px] font-semibold text-[#434844]/60">Shares to burn</span>
                 <span className="text-[10px] text-[#434844]/50">
-                  Eligible: <span className="font-mono font-semibold">{fmtShares(maxBurn)}</span> fbUSDC
+                  Eligible: <span className="font-mono font-semibold">{fmtShares(maxBurn)}</span> yrCORE
                 </span>
               </div>
               <div className="flex items-center gap-2 bg-white rounded-lg px-3 py-2"
@@ -332,7 +333,7 @@ function EmergencyExitPanel({ fbUsdcBalance }: { fbUsdcBalance: bigint }) {
                   onChange={e => setBurnAmt(e.target.value)}
                   className="flex-1 bg-transparent text-base font-semibold text-[#1b1c1a] outline-none placeholder:text-[#434844]/25 font-mono"
                 />
-                <span className="text-[#434844]/60 text-xs font-semibold">fbUSDC</span>
+                <span className="text-[#434844]/60 text-xs font-semibold">yrCORE</span>
                 <button
                   onClick={() => maxBurn > 0n && setBurnAmt(formatUnits(maxBurn, 18))}
                   disabled={maxBurn === 0n}
@@ -389,16 +390,16 @@ export default function Positions() {
   // ── Batch reads ──────────────────────────────────────────────────────────
   const { data: reads, isLoading: readsLoading, error: readsError, refetch: refetchReads } = useReadContracts({
     contracts: [
-      { address: ADDR.FundVaultV01 as Address, abi: VAULT_ABI, functionName: 'balanceOf',      args: [address ?? '0x0000000000000000000000000000000000000000'] },
-      { address: ADDR.FundVaultV01 as Address, abi: VAULT_ABI, functionName: 'totalAssets' },
+      { address: ADDR.YearRingCoreVaultV01 as Address, abi: VAULT_ABI, functionName: 'balanceOf',      args: [address ?? '0x0000000000000000000000000000000000000000'] },
+      { address: ADDR.YearRingCoreVaultV01 as Address, abi: VAULT_ABI, functionName: 'totalAssets' },
       { address: ADDR.USDC         as Address, abi: USDC_ABI,  functionName: 'balanceOf',      args: [address ?? '0x0000000000000000000000000000000000000000'] },
-      { address: ADDR.USDC         as Address, abi: USDC_ABI,  functionName: 'allowance',      args: [address ?? '0x0000000000000000000000000000000000000000', ADDR.FundVaultV01 as Address] },
-      { address: ADDR.FundVaultV01 as Address, abi: VAULT_ABI, functionName: 'depositsPaused' },
-      { address: ADDR.FundVaultV01 as Address, abi: VAULT_ABI, functionName: 'redeemsPaused' },
-      { address: ADDR.FundVaultV01 as Address, abi: VAULT_ABI, functionName: 'isAllowed',      args: [address ?? '0x0000000000000000000000000000000000000000'] },
-      { address: ADDR.FundVaultV01 as Address, abi: VAULT_ABI, functionName: 'systemMode' },
-      { address: ADDR.FundVaultV01 as Address, abi: VAULT_ABI, functionName: 'pricePerShare' },
-      { address: ADDR.FundVaultV01 as Address, abi: VAULT_ABI, functionName: 'mgmtFeeBpsPerMonth' },
+      { address: ADDR.USDC         as Address, abi: USDC_ABI,  functionName: 'allowance',      args: [address ?? '0x0000000000000000000000000000000000000000', ADDR.YearRingCoreVaultV01 as Address] },
+      { address: ADDR.YearRingCoreVaultV01 as Address, abi: VAULT_ABI, functionName: 'depositsPaused' },
+      { address: ADDR.YearRingCoreVaultV01 as Address, abi: VAULT_ABI, functionName: 'redeemsPaused' },
+      { address: ADDR.YearRingCoreVaultV01 as Address, abi: VAULT_ABI, functionName: 'isAllowed',      args: [address ?? '0x0000000000000000000000000000000000000000'] },
+      { address: ADDR.YearRingCoreVaultV01 as Address, abi: VAULT_ABI, functionName: 'systemMode' },
+      { address: ADDR.YearRingCoreVaultV01 as Address, abi: VAULT_ABI, functionName: 'pricePerShare' },
+      { address: ADDR.YearRingCoreVaultV01 as Address, abi: VAULT_ABI, functionName: 'mgmtFeeBpsPerMonth' },
     ],
     query: { refetchInterval: 10_000 },
   })
@@ -412,7 +413,7 @@ export default function Positions() {
   const isAllowed      = isConnected ? ((reads?.[6]?.result as boolean) ?? false) : false
   const systemModeNum  = reads?.[7]?.result !== undefined ? Number(reads[7].result) : undefined
   const pps            = (reads?.[8]?.result as bigint) ?? 0n
-  const mgmtFeeBps     = (reads?.[9]?.result as bigint) ?? 0n
+  const mgmtFeeBps     = reads?.[9]?.result !== undefined ? (reads[9].result as bigint) : undefined
 
   // ── Locked shares ────────────────────────────────────────────────────────
   const { data: lockIdsRaw } = useReadContract({
@@ -441,17 +442,17 @@ export default function Positions() {
   const totalShares = fbUsdcBalance + lockedShares
 
   const { data: holdingsRaw } = useReadContract({
-    address: ADDR.FundVaultV01 as Address, abi: VAULT_ABI,
+    address: ADDR.YearRingCoreVaultV01 as Address, abi: VAULT_ABI,
     functionName: 'convertToAssets',
     args: [totalShares > 0n ? totalShares : 1_000_000_000_000n],
   })
   const { data: lockedUSDCRaw } = useReadContract({
-    address: ADDR.FundVaultV01 as Address, abi: VAULT_ABI,
+    address: ADDR.YearRingCoreVaultV01 as Address, abi: VAULT_ABI,
     functionName: 'convertToAssets',
     args: [lockedShares > 0n ? lockedShares : 1_000_000_000_000n],
   })
   const { data: freeUSDCRaw } = useReadContract({
-    address: ADDR.FundVaultV01 as Address, abi: VAULT_ABI,
+    address: ADDR.YearRingCoreVaultV01 as Address, abi: VAULT_ABI,
     functionName: 'convertToAssets',
     args: [fbUsdcBalance > 0n ? fbUsdcBalance : 1_000_000_000_000n],
   })
@@ -482,6 +483,15 @@ export default function Positions() {
   const reserveRatioPct = totalAssets > 0n
     ? Number((reserveUSDC * 10000n) / totalAssets) / 100
     : 0
+
+  // ── Points balance ───────────────────────────────────────────────────────
+  const { data: pointsBalRaw } = useReadContract({
+    address: ADDR.PointsToken as Address, abi: POINTS_ABI,
+    functionName: 'balanceOf',
+    args: [address ?? '0x0000000000000000000000000000000000000000'],
+    query: { enabled: isConnected && !!address, refetchInterval: 15_000 },
+  })
+  const pointsBalance = (pointsBalRaw as bigint | undefined) ?? 0n
 
   // ── PPS history tracking ─────────────────────────────────────────────────
   useEffect(() => {
@@ -517,7 +527,7 @@ export default function Positions() {
           if (blockNumber < 0n) continue
           try {
             const result = await publicClient!.readContract({
-              address: ADDR.FundVaultV01 as Address,
+              address: ADDR.YearRingCoreVaultV01 as Address,
               abi: VAULT_ABI,
               functionName: 'pricePerShare',
               blockNumber,
@@ -550,12 +560,12 @@ export default function Positions() {
 
   // ── Preview reads ─────────────────────────────────────────────────────────
   const { data: previewShares } = useReadContract({
-    address: ADDR.FundVaultV01 as Address, abi: VAULT_ABI,
+    address: ADDR.YearRingCoreVaultV01 as Address, abi: VAULT_ABI,
     functionName: 'previewDeposit', args: [parsedDeposit],
     query: { enabled: parsedDeposit > 0n },
   })
   const { data: previewUSDC } = useReadContract({
-    address: ADDR.FundVaultV01 as Address, abi: VAULT_ABI,
+    address: ADDR.YearRingCoreVaultV01 as Address, abi: VAULT_ABI,
     functionName: 'previewRedeem', args: [parsedRedeem],
     query: { enabled: parsedRedeem > 0n },
   })
@@ -584,19 +594,19 @@ export default function Positions() {
   const handleApprove = () => {
     setDepositErr('')
     try {
-      writeApprove({ address: ADDR.USDC as Address, abi: USDC_ABI, functionName: 'approve', args: [ADDR.FundVaultV01 as Address, parsedDeposit] })
+      writeApprove({ address: ADDR.USDC as Address, abi: USDC_ABI, functionName: 'approve', args: [ADDR.YearRingCoreVaultV01 as Address, parsedDeposit] })
     } catch(e) { setDepositErr(parseTxError(e)) }
   }
   const handleDeposit = () => {
     setDepositErr('')
     try {
-      writeDeposit({ address: ADDR.FundVaultV01 as Address, abi: VAULT_ABI, functionName: 'deposit', args: [parsedDeposit, address as Address] })
+      writeDeposit({ address: ADDR.YearRingCoreVaultV01 as Address, abi: VAULT_ABI, functionName: 'deposit', args: [parsedDeposit, address as Address] })
     } catch(e) { setDepositErr(parseTxError(e)) }
   }
   const handleRedeem = () => {
     setRedeemErr('')
     try {
-      writeRedeem({ address: ADDR.FundVaultV01 as Address, abi: VAULT_ABI, functionName: 'redeem', args: [parsedRedeem, address as Address, address as Address] })
+      writeRedeem({ address: ADDR.YearRingCoreVaultV01 as Address, abi: VAULT_ABI, functionName: 'redeem', args: [parsedRedeem, address as Address, address as Address] })
     } catch(e) { setRedeemErr(parseTxError(e)) }
   }
   const handleMaxRedeem = () => fbUsdcBalance > 0n && setRedeemAmt(formatUnits(fbUsdcBalance, 18))
@@ -655,7 +665,7 @@ export default function Positions() {
     if (parsedRedeem > fbUsdcBalance) return { label: 'Insufficient Balance', disabled: true }
     if (redeemInflight) return { label: redeemConfirming ? 'Confirming…' : 'Signing…', disabled: true }
     if (redeemSuccess)  return { label: '✓ Redeemed', disabled: true }
-    return { label: 'Redeem fbUSDC', disabled: false, action: handleRedeem }
+    return { label: 'Redeem yrCORE', disabled: false, action: handleRedeem }
   })()
 
   // ── JSX ───────────────────────────────────────────────────────────────────
@@ -719,7 +729,7 @@ export default function Positions() {
           {/* Right: stats */}
           <div className="flex flex-wrap gap-6 md:gap-10">
             {[
-              { label: 'Price per Share', value: pps > 0n ? fmtPPS(pps) : '—', sub: 'fbUSDC / USDC' },
+              { label: 'Price per Share', value: pps > 0n ? fmtPPS(pps) : '—', sub: 'yrCORE / USDC' },
               { label: 'Current APR',     value: aprPct ? `${aprPct}%` : '—',  sub: 'Aave V3 · Estimated' },
               { label: 'Total Assets',    value: totalAssets > 0n ? `$${fmtUSDC(totalAssets)}` : '—', sub: 'Protocol TVL' },
             ].map(({ label, value, sub }) => (
@@ -735,6 +745,19 @@ export default function Positions() {
                 <p className="text-[10px] text-white/40">{sub}</p>
               </div>
             ))}
+            {isConnected && (
+              <div className="space-y-1 pl-6 md:pl-8" style={{ borderLeft: '1px solid rgba(255,255,255,0.12)' }}>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-white/40">Your Points</p>
+                {readsLoading ? (
+                  <div className="animate-pulse h-6 w-20 rounded-md bg-white/20" />
+                ) : (
+                  <p className="text-lg font-bold text-white" style={{ fontFamily: "'Noto Serif', serif" }}>
+                    {fmtPoints(pointsBalance)}
+                  </p>
+                )}
+                <p className="text-[10px] text-white/40">YRPTS · closed beta points</p>
+              </div>
+            )}
           </div>
         </div>
       </section>
@@ -744,7 +767,7 @@ export default function Positions() {
         {[
           { label: 'Strategy Deployed', value: stratDeployed > 0n ? `$${fmtUSDC(stratDeployed)}` : '—', sub: 'In Aave V3' },
           { label: 'Reserve',           value: reserveUSDC   > 0n ? `$${fmtUSDC(reserveUSDC)}`   : '—', sub: `${reserveRatioPct.toFixed(1)}% of TVL` },
-          { label: 'Mgmt Fee',          value: mgmtFeeBps === 0n ? 'Free' : `${(Number(mgmtFeeBps) / 100).toFixed(2)}%`, sub: 'Per month' },
+          { label: 'Mgmt Fee',          value: mgmtFeeBps !== undefined ? `${(Number(mgmtFeeBps) / 100).toFixed(2)}%` : '—', sub: 'PPS dilution / month' },
           { label: 'PPS Trend',         value: null, sparkline: true },
         ].map(({ label, value, sub, sparkline }) => (
           <div key={label} className="rounded-xl px-4 py-3" style={{ background: '#f5f5f0' }}>
@@ -824,7 +847,7 @@ export default function Positions() {
                 ['Asset',         'USDC'],
                 ['Network',       'Base'],
                 ['Strategy',      'Aave V3'],
-                ['Share token',   'fbUSDC · ERC-4626'],
+                ['Share token',   'yrCORE · ERC-4626'],
                 ['Custody',       'Non-custodial'],
                 ['Governance',    '24h Timelock on all admin ops'],
                 ['Exit',          'Emergency exit always available'],
@@ -862,9 +885,16 @@ export default function Positions() {
             <div className="bg-white rounded-lg px-4 py-3 flex justify-between items-center">
               <span className="text-xs text-[#434844]">You receive</span>
               <span className="text-sm font-bold text-[#18281e]">
-                ≈ {fmtShares(previewShares as bigint)} fbUSDC
+                ≈ {fmtShares(previewShares as bigint)} yrCORE
               </span>
             </div>
+          )}
+
+          {/* Fee note */}
+          {mgmtFeeBps !== undefined && mgmtFeeBps > 0n && (
+            <p className="text-[10px] text-[#434844]/40 leading-relaxed">
+              A {(Number(mgmtFeeBps) / 100).toFixed(2)}%/month management fee is charged by minting new shares to the protocol treasury, which gradually dilutes the price per share (PPS). Your share count is never deducted.
+            </p>
           )}
 
           {/* Step indicator */}
@@ -965,7 +995,7 @@ export default function Positions() {
                 onChange={e => { setRedeemAmt(e.target.value); setRedeemErr(''); resetRedeem() }}
                 className="flex-1 bg-transparent text-2xl font-semibold text-[#1b1c1a] outline-none placeholder:text-[#434844]/20 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
               />
-              <span className="text-[#434844] font-semibold text-sm">fbUSDC</span>
+              <span className="text-[#434844] font-semibold text-sm">yrCORE</span>
               <button
                 onClick={handleMaxRedeem}
                 className="text-[10px] font-bold text-[#715a3e] bg-[#715a3e]/8 px-2 py-0.5 rounded hover:bg-[#715a3e]/15 transition-colors"
@@ -975,7 +1005,7 @@ export default function Positions() {
             </div>
             <p className="text-xs text-[#434844]/70">
               Balance: <span className="font-semibold text-[#434844]">
-                {isConnected ? `${fmtShares(fbUsdcBalance)} fbUSDC` : '—'}
+                {isConnected ? `${fmtShares(fbUsdcBalance)} yrCORE` : '—'}
               </span>
             </p>
           </div>
@@ -1023,7 +1053,7 @@ export default function Positions() {
           {/* Locked shares note */}
           {isConnected && lockedShares > 0n && (
             <p className="text-[10px] text-[#434844]/60 text-center">
-              {fmtShares(lockedShares)} fbUSDC is locked · go to Locks to manage
+              {fmtShares(lockedShares)} yrCORE is locked · go to Locks to manage
             </p>
           )}
         </div>

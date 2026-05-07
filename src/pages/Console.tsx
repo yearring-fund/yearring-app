@@ -110,7 +110,7 @@ function VaultControls({ depositsPaused, redeemsPaused, onDone }: {
     setErr(''); setHash(undefined)
     try {
       setHash(await writeContractAsync({
-        address: ADDR.FundVaultV01 as Address, abi: VAULT_ABI,
+        address: ADDR.YearRingCoreVaultV01 as Address, abi: VAULT_ABI,
         functionName: fn as never, args: args as never,
       }))
       setTimeout(onDone, 3000)
@@ -159,7 +159,7 @@ function FeeControls({ mgmtFeeBps, reserveBps, treasuryAddr, treasuryShares, fee
     setErr(''); setHash(undefined)
     try {
       setHash(await writeContractAsync({
-        address: ADDR.FundVaultV01 as Address, abi: VAULT_ABI,
+        address: ADDR.YearRingCoreVaultV01 as Address, abi: VAULT_ABI,
         functionName: fn as never, args: args as never,
       }))
       setTimeout(onDone, 3000)
@@ -219,7 +219,7 @@ function AllowlistControls({ onDone }: { onDone: () => void }) {
     setErr(''); setHash(undefined)
     try {
       setHash(await writeContractAsync({
-        address: ADDR.FundVaultV01 as Address, abi: VAULT_ABI,
+        address: ADDR.YearRingCoreVaultV01 as Address, abi: VAULT_ABI,
         functionName: fn as never, args: [addr as Address],
       }))
       setTimeout(onDone, 3000)
@@ -256,7 +256,7 @@ function StrategyControls({ totalAssets, stratManaged, stratIdle, onDone }: {
   async function vaultTx(fn: string, args: unknown[]) {
     setErr(''); setHash(undefined)
     try {
-      setHash(await writeContractAsync({ address: ADDR.FundVaultV01 as Address, abi: VAULT_ABI, functionName: fn as never, args: args as never }))
+      setHash(await writeContractAsync({ address: ADDR.YearRingCoreVaultV01 as Address, abi: VAULT_ABI, functionName: fn as never, args: args as never }))
       setTimeout(onDone, 3000)
     } catch (e) { setErr(parseTxError(e)) }
   }
@@ -329,7 +329,7 @@ function EmergencyControls({ systemMode, totalAssets, stratManaged, currentRound
     setErr(''); setHash(undefined)
     try {
       setHash(await writeContractAsync({
-        address: ADDR.FundVaultV01 as Address, abi: VAULT_ABI,
+        address: ADDR.YearRingCoreVaultV01 as Address, abi: VAULT_ABI,
         functionName: fn as never, args: (args ?? []) as never,
       }))
       setTimeout(onDone, 3000)
@@ -369,14 +369,14 @@ function EmergencyControls({ systemMode, totalAssets, stratManaged, currentRound
 function AdminConsole() {
   const { data, error: dataError, refetch } = useReadContracts({
     contracts: [
-      { address: ADDR.FundVaultV01 as Address,       abi: VAULT_ABI,     functionName: 'totalAssets'             },
-      { address: ADDR.FundVaultV01 as Address,       abi: VAULT_ABI,     functionName: 'systemMode'              },
-      { address: ADDR.FundVaultV01 as Address,       abi: VAULT_ABI,     functionName: 'depositsPaused'          },
-      { address: ADDR.FundVaultV01 as Address,       abi: VAULT_ABI,     functionName: 'redeemsPaused'           },
-      { address: ADDR.FundVaultV01 as Address,       abi: VAULT_ABI,     functionName: 'mgmtFeeBpsPerMonth'      },
-      { address: ADDR.FundVaultV01 as Address,       abi: VAULT_ABI,     functionName: 'reserveRatioBps'         },
-      { address: ADDR.FundVaultV01 as Address,       abi: VAULT_ABI,     functionName: 'treasury'                },
-      { address: ADDR.FundVaultV01 as Address,       abi: VAULT_ABI,     functionName: 'currentRoundId'          },
+      { address: ADDR.YearRingCoreVaultV01 as Address,       abi: VAULT_ABI,     functionName: 'totalAssets'             },
+      { address: ADDR.YearRingCoreVaultV01 as Address,       abi: VAULT_ABI,     functionName: 'systemMode'              },
+      { address: ADDR.YearRingCoreVaultV01 as Address,       abi: VAULT_ABI,     functionName: 'depositsPaused'          },
+      { address: ADDR.YearRingCoreVaultV01 as Address,       abi: VAULT_ABI,     functionName: 'redeemsPaused'           },
+      { address: ADDR.YearRingCoreVaultV01 as Address,       abi: VAULT_ABI,     functionName: 'mgmtFeeBpsPerMonth'      },
+      { address: ADDR.YearRingCoreVaultV01 as Address,       abi: VAULT_ABI,     functionName: 'reserveRatioBps'         },
+      { address: ADDR.YearRingCoreVaultV01 as Address,       abi: VAULT_ABI,     functionName: 'treasury'                },
+      { address: ADDR.YearRingCoreVaultV01 as Address,       abi: VAULT_ABI,     functionName: 'currentRoundId'          },
       { address: ADDR.StrategyManagerV01 as Address, abi: STRAT_MGR_ABI, functionName: 'totalManagedAssets'      },
       { address: ADDR.StrategyManagerV01 as Address, abi: STRAT_MGR_ABI, functionName: 'idleUnderlying'          },
       { address: ADDR.StrategyManagerV01 as Address, abi: STRAT_MGR_ABI, functionName: 'paused'                  },
@@ -400,17 +400,17 @@ function AdminConsole() {
   const MODE_COLOR: Record<number, string> = { 0: 'text-emerald-600', 1: 'text-amber-600', 2: 'text-red-600' }
 
   const { data: tShares } = useReadContract({
-    address: ADDR.FundVaultV01 as Address, abi: VAULT_ABI,
+    address: ADDR.YearRingCoreVaultV01 as Address, abi: VAULT_ABI,
     functionName: 'balanceOf', args: [treasuryAddr ?? '0x0000000000000000000000000000000000000000'],
     query: { enabled: !!treasuryAddr },
   })
   const { data: tUSDC } = useReadContract({
-    address: ADDR.FundVaultV01 as Address, abi: VAULT_ABI,
+    address: ADDR.YearRingCoreVaultV01 as Address, abi: VAULT_ABI,
     functionName: 'convertToAssets', args: [(tShares as bigint | undefined) ?? 0n],
     query: { enabled: (tShares as bigint | undefined) !== undefined },
   })
   const { data: exitRound } = useReadContract({
-    address: ADDR.FundVaultV01 as Address, abi: VAULT_ABI,
+    address: ADDR.YearRingCoreVaultV01 as Address, abi: VAULT_ABI,
     functionName: 'exitRounds', args: [roundId],
     query: { enabled: roundId > 0n },
   })
@@ -479,7 +479,7 @@ export default function Console() {
   const location  = useLocation()
 
   const { data: isAdmin, isLoading } = useReadContract({
-    address: ADDR.FundVaultV01 as Address, abi: VAULT_ABI,
+    address: ADDR.YearRingCoreVaultV01 as Address, abi: VAULT_ABI,
     functionName: 'hasRole',
     args: [ADMIN_ROLE, address as Address],
     query: { enabled: !!address },
@@ -546,7 +546,7 @@ export default function Console() {
             Admin Console
           </h2>
           <p className="mt-1 text-xs text-[#434844]/60">
-            Protocol management — FundVaultV01 &amp; StrategyManagerV01
+            Protocol management — YearRingCoreVaultV01 &amp; StrategyManagerV01
           </p>
         </div>
 
@@ -565,7 +565,7 @@ export default function Console() {
             <span className="material-symbols-outlined text-4xl text-red-300">gpp_bad</span>
             <p className="text-sm font-semibold text-[#1b1c1a]">Access Denied</p>
             <p className="text-xs text-[#434844]/60 max-w-xs">
-              Connected address does not hold <code className="font-mono bg-white px-1 rounded">DEFAULT_ADMIN_ROLE</code> on FundVaultV01.
+              Connected address does not hold <code className="font-mono bg-white px-1 rounded">DEFAULT_ADMIN_ROLE</code> on YearRingCoreVaultV01.
             </p>
             <p className="font-mono text-[10px] text-[#434844]/40 break-all max-w-xs">{address}</p>
           </div>

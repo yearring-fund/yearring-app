@@ -8,7 +8,7 @@ import {
 } from 'wagmi'
 import { formatUnits, parseUnits, type Address } from 'viem'
 import {
-  ADDR, VAULT_ABI, LEDGER_ABI, BENEFIT_ABI, LOCK_MGR_ABI, RWT_ABI,
+  ADDR, VAULT_ABI, LEDGER_ABI, BENEFIT_ABI, LOCK_MGR_ABI, POINTS_ABI,
 } from '../../lib/contracts'
 import { parseTxError, parseReadError } from '../../lib/txError'
 import { Sk } from '../../components/ui/Skeleton'
@@ -17,7 +17,7 @@ import { Sk } from '../../components/ui/Skeleton'
 function fmtShares(n: bigint) {
   return Number(formatUnits(n, 18)).toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 })
 }
-function fmtRWT(n: bigint) {
+function fmtPoints(n: bigint) {
   return Number(formatUnits(n, 18)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 function safeParse(val: string): bigint {
@@ -142,7 +142,7 @@ function TierCard({
           </span>
         </div>
         <div className="flex items-center justify-between text-[10px]">
-          <span className="text-[#434844]/60">RWT reward</span>
+          <span className="text-[#434844]/60">Points reward</span>
           <span className="font-semibold text-[#434844]">
             {(tier.multiplierBps / 10000).toFixed(1)}×
           </span>
@@ -211,23 +211,23 @@ function LockRow({
 
   // Early exit check (only fetched when expanded and active)
   const { data: exitData } = useReadContract({
-    address: ADDR.LockRewardManagerV02 as Address,
+    address: ADDR.LockPointsRebateManagerV02 as Address,
     abi: LOCK_MGR_ABI,
     functionName: 'checkEarlyExit',
     args: [lock.lockId],
     query: { enabled: !!address && canEarlyExit && expanded },
   })
-  const { data: rwtAllowance, refetch: refetchRwtAllow } = useReadContract({
-    address: ADDR.RewardToken as Address,
-    abi: RWT_ABI,
+  const { data: pointsAllowance, refetch: refetchPointsAllow } = useReadContract({
+    address: ADDR.PointsToken as Address,
+    abi: POINTS_ABI,
     functionName: 'allowance',
-    args: [address as Address, ADDR.LockRewardManagerV02 as Address],
+    args: [address as Address, ADDR.LockPointsRebateManagerV02 as Address],
     query: { enabled: !!address && canEarlyExit && expanded },
   })
 
-  const exitInfo = exitData as { rebateShares: bigint; tokensToReturn: bigint } | undefined
-  const needsRwtApprove = exitInfo && exitInfo.tokensToReturn > 0n
-    && ((rwtAllowance as bigint | undefined) ?? 0n) < exitInfo.tokensToReturn
+  const exitInfo = exitData as { rebateShares: bigint; pointsToReturn: bigint } | undefined
+  const needsPointsApprove = exitInfo && exitInfo.pointsToReturn > 0n
+    && ((pointsAllowance as bigint | undefined) ?? 0n) < exitInfo.pointsToReturn
 
   const { writeContractAsync: write, isPending } = useWriteContract()
   const [approveTx, setApproveTx] = useState<`0x${string}` | undefined>()
@@ -235,7 +235,7 @@ function LockRow({
   const { isLoading: confirming } = useWaitForTransactionReceipt({ hash: txHash })
   const busy = isPending || approveConfirming || confirming
 
-  useEffect(() => { if (approveSuccess) refetchRwtAllow() }, [approveSuccess])  // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (approveSuccess) refetchPointsAllow() }, [approveSuccess])  // eslint-disable-line react-hooks/exhaustive-deps
 
   async function doUnlock() {
     setTxErr('')
@@ -255,7 +255,7 @@ function LockRow({
     setTxErr('')
     try {
       const h = await write({
-        address: ADDR.LockRewardManagerV02 as Address,
+        address: ADDR.LockPointsRebateManagerV02 as Address,
         abi: LOCK_MGR_ABI,
         functionName: 'claimRebate',
         args: [lock.lockId],
@@ -265,15 +265,15 @@ function LockRow({
     } catch (e) { setTxErr(parseTxError(e)) }
   }
 
-  async function doApproveRwt() {
+  async function doApprovePoints() {
     if (!exitInfo) return
     setTxErr('')
     try {
       const h = await write({
-        address: ADDR.RewardToken as Address,
-        abi: RWT_ABI,
+        address: ADDR.PointsToken as Address,
+        abi: POINTS_ABI,
         functionName: 'approve',
-        args: [ADDR.LockRewardManagerV02 as Address, exitInfo.tokensToReturn],
+        args: [ADDR.LockPointsRebateManagerV02 as Address, exitInfo.pointsToReturn],
       })
       setApproveTx(h)
     } catch (e) { setTxErr(parseTxError(e)) }
@@ -283,9 +283,9 @@ function LockRow({
     setTxErr('')
     try {
       const h = await write({
-        address: ADDR.LockRewardManagerV02 as Address,
+        address: ADDR.LockPointsRebateManagerV02 as Address,
         abi: LOCK_MGR_ABI,
-        functionName: 'earlyExitWithReturn',
+        functionName: 'earlyExit',
         args: [lock.lockId],
       })
       setTxHash(h)
@@ -311,7 +311,7 @@ function LockRow({
       <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
         <div>
           <div className="text-[10px] text-[#434844]/50 uppercase tracking-wide">Locked</div>
-          <div className="font-semibold text-[#1b1c1a] font-mono">{fmtShares(lock.shares)} fbUSDC</div>
+          <div className="font-semibold text-[#1b1c1a] font-mono">{fmtShares(lock.shares)} yrCORE</div>
         </div>
         <div>
           <div className="text-[10px] text-[#434844]/50 uppercase tracking-wide">Unlocks</div>
@@ -320,7 +320,7 @@ function LockRow({
         {lock.rebate > 0n && (
           <div>
             <div className="text-[10px] text-[#434844]/50 uppercase tracking-wide">Claimable Rebate</div>
-            <div className="font-semibold text-[#715a3e]">{fmtRWT(lock.rebate)} RWT</div>
+            <div className="font-semibold text-[#715a3e]">{fmtPoints(lock.rebate)} Points</div>
           </div>
         )}
       </div>
@@ -345,7 +345,7 @@ function LockRow({
               className="text-xs font-semibold px-3 py-1.5 rounded-lg text-[#715a3e] disabled:opacity-50 transition-opacity"
               style={{ background: '#fdf8f3', border: '1px solid #715a3e40' }}
             >
-              {busy ? 'Signing…' : `Claim ${fmtRWT(lock.rebate)} RWT`}
+              {busy ? 'Signing…' : `Claim ${fmtPoints(lock.rebate)} Points`}
             </button>
           )}
           {canEarlyExit && (
@@ -368,8 +368,8 @@ function LockRow({
               <div className="text-[11px] text-red-600 font-semibold">Early Exit Penalty</div>
               <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
                 <div>
-                  <span className="text-[#434844]/50">Return RWT</span>
-                  <div className="font-mono font-semibold text-red-600">{fmtRWT(exitInfo.tokensToReturn)} RWT</div>
+                  <span className="text-[#434844]/50">Return Points</span>
+                  <div className="font-mono font-semibold text-red-600">{fmtPoints(exitInfo.pointsToReturn)} Points</div>
                 </div>
                 <div>
                   <span className="text-[#434844]/50">Days remaining</span>
@@ -377,11 +377,11 @@ function LockRow({
                 </div>
               </div>
               <div className="flex items-center justify-between gap-2 pt-1">
-                {exitInfo.tokensToReturn > 0n && (
-                  <StepDots steps={['Authorize', 'Exit']} current={needsRwtApprove ? 1 : 2} />
+                {exitInfo.pointsToReturn > 0n && (
+                  <StepDots steps={['Authorize', 'Exit']} current={needsPointsApprove ? 1 : 2} />
                 )}
                 <button
-                  onClick={needsRwtApprove ? doApproveRwt : doEarlyExit}
+                  onClick={needsPointsApprove ? doApprovePoints : doEarlyExit}
                   disabled={busy}
                   className="ml-auto text-xs font-bold px-3 py-1.5 rounded-lg text-white disabled:opacity-50 transition-opacity"
                   style={{ background: 'linear-gradient(135deg, #7f1d1d, #b91c1c)' }}
@@ -390,8 +390,8 @@ function LockRow({
                     ? 'Signing…'
                     : (approveConfirming || confirming)
                       ? 'Confirming…'
-                      : needsRwtApprove
-                        ? 'Authorize RWT'
+                      : needsPointsApprove
+                        ? 'Authorize Points'
                         : 'Confirm Exit'}
                 </button>
               </div>
@@ -432,8 +432,8 @@ export default function Locks() {
   // ── User balances & allowance ────────────────────────────────────────────
   const { data: balData, refetch: refetchBal } = useReadContracts({
     contracts: [
-      { address: ADDR.FundVaultV01 as Address, abi: VAULT_ABI, functionName: 'balanceOf', args: [address as Address] },
-      { address: ADDR.FundVaultV01 as Address, abi: VAULT_ABI, functionName: 'allowance', args: [address as Address, ADDR.LockLedgerV02 as Address] },
+      { address: ADDR.YearRingCoreVaultV01 as Address, abi: VAULT_ABI, functionName: 'balanceOf', args: [address as Address] },
+      { address: ADDR.YearRingCoreVaultV01 as Address, abi: VAULT_ABI, functionName: 'allowance', args: [address as Address, ADDR.LockLedgerV02 as Address] },
     ],
     query: { enabled: !!address, refetchInterval: 15_000 },
   })
@@ -454,7 +454,7 @@ export default function Locks() {
   const lockContracts = useMemo(() => lockIds.flatMap(id => [
     { address: ADDR.LockLedgerV02 as Address, abi: LEDGER_ABI, functionName: 'getLock' as const, args: [id] },
     { address: ADDR.LockBenefitV02 as Address, abi: BENEFIT_ABI, functionName: 'tierOf' as const, args: [id] },
-    { address: ADDR.LockRewardManagerV02 as Address, abi: LOCK_MGR_ABI, functionName: 'previewRebate' as const, args: [id] },
+    { address: ADDR.LockPointsRebateManagerV02 as Address, abi: LOCK_MGR_ABI, functionName: 'previewRebate' as const, args: [id] },
   ]), [lockIds.join(',')])  // eslint-disable-line react-hooks/exhaustive-deps
 
   const { data: lockBatch, isLoading: batchLoading, error: batchError, refetch: refetchBatch } = useReadContracts({
@@ -508,7 +508,7 @@ export default function Locks() {
     setTxErr('')
     try {
       const h = await writeContractAsync({
-        address: ADDR.FundVaultV01 as Address,
+        address: ADDR.YearRingCoreVaultV01 as Address,
         abi: VAULT_ABI,
         functionName: 'approve',
         args: [ADDR.LockLedgerV02 as Address, parsedShares],
@@ -521,9 +521,9 @@ export default function Locks() {
     setTxErr('')
     try {
       const h = await writeContractAsync({
-        address: ADDR.LockRewardManagerV02 as Address,
+        address: ADDR.LockPointsRebateManagerV02 as Address,
         abi: LOCK_MGR_ABI,
-        functionName: 'lockWithReward',
+        functionName: 'lockWithPoints',
         args: [parsedShares, BigInt(tier.duration)],
       })
       setLockTxHash(h)
@@ -551,13 +551,13 @@ export default function Locks() {
             </span>
           </div>
           <p className="text-xs text-[#434844]/70 leading-relaxed">
-            Locking commits fbUSDC shares for a fixed term. In exchange you receive a management fee rebate for the duration of the lock, plus an RWT reward when the lock matures. RWT is the protocol's governance token — it grants voting power on protocol parameter proposals.
+            Locking commits yrCORE shares for a fixed term. In exchange you receive a management fee rebate for the duration of the lock, plus Points when the lock matures. Points are the protocol's governance token — they grant voting power on protocol parameter proposals.
           </p>
           <div className="grid grid-cols-1 gap-2">
             {([
-              ['token',              'Bronze · 30 days — 20% fee rebate · 1.0× RWT reward'],
-              ['workspace_premium',  'Silver · 90 days — 40% fee rebate · 1.3× RWT reward'],
-              ['military_tech',      'Gold · 180 days — 60% fee rebate · 1.8× RWT reward'],
+              ['token',              'Bronze · 30 days — 20% fee rebate · 1.0× Points'],
+              ['workspace_premium',  'Silver · 90 days — 40% fee rebate · 1.3× Points'],
+              ['military_tech',      'Gold · 180 days — 60% fee rebate · 1.8× Points'],
             ] as const).map(([icon, text]) => (
               <div key={icon} className="flex items-start gap-2.5 px-3 py-2.5 rounded-lg" style={{ background: '#fff', border: '1px solid #e8e8e2' }}>
                 <span className="material-symbols-outlined text-base text-[#715a3e] flex-shrink-0 mt-0.5">{icon}</span>
@@ -582,8 +582,8 @@ export default function Locks() {
       <div className="rounded-xl px-4 py-3 flex flex-wrap gap-x-6 gap-y-1.5" style={{ background: '#f5f5f0' }}>
         {[
           ['Fee rebate', 'Applied for the full lock duration — starts immediately'],
-          ['RWT reward', 'Distributed at unlock. Used for governance voting.'],
-          ['Early exit', 'Available at any time — rebate and RWT reward are forfeited'],
+          ['Points reward', 'Distributed at unlock. Used for governance voting.'],
+          ['Early exit', 'Available at any time — rebate and Points reward are forfeited'],
         ].map(([k, v]) => (
           <div key={k} className="flex items-center gap-1.5">
             <span className="text-[10px] font-bold text-[#434844]/50">{k}</span>
@@ -615,7 +615,7 @@ export default function Locks() {
           <div className="flex items-center justify-between mb-1.5">
             <label className="text-xs font-semibold text-[#434844]">Amount to lock</label>
             <span className="text-[11px] text-[#434844]/50">
-              Available: <span className="font-mono">{fmtShares(freeBalance)}</span> fbUSDC
+              Available: <span className="font-mono">{fmtShares(freeBalance)}</span> yrCORE
             </span>
           </div>
           <div className="relative">
@@ -660,9 +660,9 @@ export default function Locks() {
                 <div className="font-semibold text-[#715a3e]">{tier.feeDiscountBps / 100}% off mgmt fee</div>
               </div>
               <div>
-                <div className="text-[10px] text-[#434844]/50">RWT Reward</div>
+                <div className="text-[10px] text-[#434844]/50">Points Reward</div>
                 <div className="font-semibold text-[#434844]">
-                  {fmtShares(parsedShares * BigInt(tier.multiplierBps) / 10000n)} RWT
+                  {fmtPoints(parsedShares * BigInt(tier.multiplierBps) / 10000n)} Points
                 </div>
               </div>
             </div>
@@ -695,7 +695,7 @@ export default function Locks() {
               : (approveConfirming || lockConfirming)
                 ? 'Confirming…'
                 : needsApprove
-                  ? 'Approve fbUSDC'
+                  ? 'Approve yrCORE'
                   : 'Lock'}
           </button>
         </div>
@@ -734,7 +734,7 @@ export default function Locks() {
           </h2>
           {activeLocks.length > 0 && (
             <span className="text-xs text-[#434844]/50">
-              {activeLocks.length} lock{activeLocks.length > 1 ? 's' : ''} · {fmtShares(lockedShares)} fbUSDC
+              {activeLocks.length} lock{activeLocks.length > 1 ? 's' : ''} · {fmtShares(lockedShares)} yrCORE
             </span>
           )}
         </div>
@@ -766,7 +766,7 @@ export default function Locks() {
             style={{ background: '#fff', border: '1px solid #e8e8e2' }}>
             <span className="material-symbols-outlined text-2xl text-[#c3c8c2] mb-2">lock_open</span>
             <p className="text-xs font-semibold text-[#434844]/60">No active locks</p>
-            <p className="text-[11px] text-[#434844]/35 mt-1">Choose a tier above and lock fbUSDC shares to start earning rebates and RWT.</p>
+            <p className="text-[11px] text-[#434844]/35 mt-1">Choose a tier above and lock yrCORE shares to start earning rebates and Points.</p>
           </div>
         ) : (
           <div className="space-y-3" key={refreshSig}>

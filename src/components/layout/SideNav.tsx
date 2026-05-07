@@ -101,7 +101,7 @@ export default function SideNav({
   const hamburgerRef = useRef<HTMLButtonElement | null>(null)
 
   const { data: isAdmin } = useReadContract({
-    address: ADDR.FundVaultV01,
+    address: ADDR.YearRingCoreVaultV01,
     abi: VAULT_ABI,
     functionName: 'hasRole',
     args: [DEFAULT_ADMIN_ROLE, address as Address],
