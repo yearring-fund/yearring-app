@@ -8,14 +8,17 @@ import {
 } from 'wagmi'
 import { formatUnits, parseUnits, type Address } from 'viem'
 import {
-  ADDR, VAULT_ABI, LEDGER_ABI, BENEFIT_ABI, LOCK_MGR_ABI, POINTS_ABI,
+  ADDR, VAULT_ABI, LOCK_MGR_ABI, REBATE_MGR_ABI, POINTS_ABI,
 } from '../../lib/contracts'
 import { parseTxError, parseReadError } from '../../lib/txError'
 import { Sk } from '../../components/ui/Skeleton'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
-function fmtShares(n: bigint) {
+function fmtYrUSDC(n: bigint) {
   return Number(formatUnits(n, 18)).toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 })
+}
+function fmtUSDC(n: bigint) {
+  return Number(formatUnits(n, 6)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 function fmtPoints(n: bigint) {
   return Number(formatUnits(n, 18)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -27,20 +30,32 @@ function safeParse(val: string): bigint {
 function fmtDate(ts: bigint) {
   return new Date(Number(ts) * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
-function daysLeft(unlockAt: bigint) {
-  const diff = Number(unlockAt) - Math.floor(Date.now() / 1000)
+function daysLeft(minUnlockTime: bigint) {
+  const diff = Number(minUnlockTime) - Math.floor(Date.now() / 1000)
   return Math.max(0, Math.ceil(diff / 86400))
 }
 
-// ── Tiers ──────────────────────────────────────────────────────────────────
+// Derive tier name from committedDuration (mirrors RewardsMathV21)
+function tierFromDuration(committedDuration: bigint): { name: string; accent: string; bg: string } {
+  const secs = Number(committedDuration)
+  if (secs >= 180 * 86400) return { name: 'Gold',   accent: '#7a6020', bg: '#fdf9ee' }
+  if (secs >=  90 * 86400) return { name: 'Silver', accent: '#5a6a6d', bg: '#f3f7f7' }
+  if (secs >=  30 * 86400) return { name: 'Bronze', accent: '#715a3e', bg: '#fdf8f3' }
+  return { name: 'Trial', accent: '#434844', bg: '#f5f5f0' }
+}
+
+// ── Lock status enum (mirrors LockStatus in ILockManagerV21) ──────────────
+// 0=None, 1=Active, 2=Exited, 3=EarlyExited
+
+// ── Tiers (for create lock UI) ─────────────────────────────────────────────
 const TIERS = [
   {
     id: 0,
     name: 'Bronze',
-    duration: 2592000,     // 30 days
+    duration: 30 * 86400,    // 30 days
     durationLabel: '30 days',
-    feeDiscountBps: 2000,  // 20%
-    multiplierBps: 10000,  // 1.0×
+    feeRebatePct: 20,
+    multiplierBps: 10000,    // 1.0×
     icon: 'token',
     accent: '#715a3e',
     bg: '#fdf8f3',
@@ -48,10 +63,10 @@ const TIERS = [
   {
     id: 1,
     name: 'Silver',
-    duration: 7776000,     // 90 days
+    duration: 90 * 86400,    // 90 days
     durationLabel: '90 days',
-    feeDiscountBps: 4000,  // 40%
-    multiplierBps: 13000,  // 1.3×
+    feeRebatePct: 40,
+    multiplierBps: 13000,    // 1.3×
     icon: 'workspace_premium',
     accent: '#5a6a6d',
     bg: '#f3f7f7',
@@ -60,10 +75,10 @@ const TIERS = [
   {
     id: 2,
     name: 'Gold',
-    duration: 15552000,    // 180 days
+    duration: 180 * 86400,   // 180 days
     durationLabel: '180 days',
-    feeDiscountBps: 6000,  // 60%
-    multiplierBps: 18000,  // 1.8×
+    feeRebatePct: 60,
+    multiplierBps: 18000,    // 1.8×
     icon: 'military_tech',
     accent: '#7a6020',
     bg: '#fdf9ee',
@@ -138,7 +153,7 @@ function TierCard({
         <div className="flex items-center justify-between text-[10px]">
           <span className="text-[#434844]/60">Fee rebate</span>
           <span className="font-semibold" style={{ color: tier.accent }}>
-            {tier.feeDiscountBps / 100}%
+            {tier.feeRebatePct}%
           </span>
         </div>
         <div className="flex items-center justify-between text-[10px]">
@@ -153,8 +168,8 @@ function TierCard({
 }
 
 // ── Tier badge (for lock row) ──────────────────────────────────────────────
-function TierBadge({ tierId }: { tierId: number }) {
-  const t = TIERS[tierId as 0 | 1 | 2] ?? TIERS[0]
+function TierBadge({ committedDuration }: { committedDuration: bigint }) {
+  const t = tierFromDuration(committedDuration)
   return (
     <span
       className="text-[10px] font-bold px-2 py-0.5 rounded-full"
@@ -166,29 +181,43 @@ function TierBadge({ tierId }: { tierId: number }) {
 }
 
 // ── Status badge ───────────────────────────────────────────────────────────
-function StatusBadge({ lock }: { lock: { unlocked: boolean; earlyExited: boolean; unlockAt: bigint } }) {
+function StatusBadge({ status, minUnlockTime }: { status: number; minUnlockTime: bigint }) {
   const now = BigInt(Math.floor(Date.now() / 1000))
-  if (lock.earlyExited) return <span className="text-[10px] text-red-500 font-semibold">Early Exited</span>
-  if (lock.unlocked)    return <span className="text-[10px] text-[#434844]/40 font-semibold">Redeemed</span>
-  if (lock.unlockAt <= now) return <span className="text-[10px] text-emerald-600 font-semibold">Ready</span>
-  return (
+  if (status === 3) return <span className="text-[10px] text-red-500 font-semibold">Early Exited</span>
+  if (status === 2) return <span className="text-[10px] text-[#434844]/40 font-semibold">Unlocked</span>
+  if (status === 1 && minUnlockTime <= now) return <span className="text-[10px] text-emerald-600 font-semibold">Ready</span>
+  if (status === 1) return (
     <span className="text-[10px] text-[#715a3e] font-semibold">
-      {daysLeft(lock.unlockAt)}d left
+      {daysLeft(minUnlockTime)}d left
     </span>
   )
+  return null
+}
+
+// ── V21 LockInfo from getLock ──────────────────────────────────────────────
+interface V21LockRaw {
+  owner: Address
+  yrUSDCAmount: bigint
+  principalAssetsUSDC: bigint
+  startTime: bigint
+  minUnlockTime: bigint
+  committedDuration: bigint
+  basePointsIssued: bigint
+  bonusPointsIssued: bigint
+  lastBonusPointsCheckpoint: bigint
+  lastRebateCheckpoint: bigint
+  claimableRebateUSDC: bigint
+  manager: Address
+  managerUnits: bigint
+  assetType: number
+  status: number
+  transition: number
 }
 
 // ── Single lock row / card ─────────────────────────────────────────────────
 interface LockInfo {
   lockId: bigint
-  owner: Address
-  shares: bigint
-  lockedAt: bigint
-  unlockAt: bigint
-  unlocked: boolean
-  earlyExited: boolean
-  tierId: number
-  rebate: bigint
+  raw: V21LockRaw
 }
 
 function LockRow({
@@ -198,53 +227,30 @@ function LockRow({
   lock: LockInfo
   onRefresh: () => void
 }) {
-  const { address } = useAccount()
+  const { raw, lockId } = lock
   const [expanded, setExpanded] = useState(false)
   const [txErr, setTxErr] = useState('')
   const [txHash, setTxHash] = useState<`0x${string}` | undefined>()
 
   const now = BigInt(Math.floor(Date.now() / 1000))
-  const isReady     = !lock.unlocked && !lock.earlyExited && lock.unlockAt <= now
-  const isActive    = !lock.unlocked && !lock.earlyExited && lock.unlockAt > now
-  const canClaim    = isActive && lock.rebate > 0n
-  const canEarlyExit = isActive
-
-  // Early exit check (only fetched when expanded and active)
-  const { data: exitData } = useReadContract({
-    address: ADDR.LockPointsRebateManagerV02 as Address,
-    abi: LOCK_MGR_ABI,
-    functionName: 'checkEarlyExit',
-    args: [lock.lockId],
-    query: { enabled: !!address && canEarlyExit && expanded },
-  })
-  const { data: pointsAllowance, refetch: refetchPointsAllow } = useReadContract({
-    address: ADDR.PointsToken as Address,
-    abi: POINTS_ABI,
-    functionName: 'allowance',
-    args: [address as Address, ADDR.LockPointsRebateManagerV02 as Address],
-    query: { enabled: !!address && canEarlyExit && expanded },
-  })
-
-  const exitInfo = exitData as { rebateShares: bigint; pointsToReturn: bigint } | undefined
-  const needsPointsApprove = exitInfo && exitInfo.pointsToReturn > 0n
-    && ((pointsAllowance as bigint | undefined) ?? 0n) < exitInfo.pointsToReturn
+  const isActive     = raw.status === 1
+  const isReady      = isActive && raw.minUnlockTime <= now
+  const isLocked     = isActive && raw.minUnlockTime > now
+  const canClaim     = (isActive || raw.status === 2) && raw.claimableRebateUSDC > 0n
+  const canEarlyExit = isLocked
 
   const { writeContractAsync: write, isPending } = useWriteContract()
-  const [approveTx, setApproveTx] = useState<`0x${string}` | undefined>()
-  const { isLoading: approveConfirming, isSuccess: approveSuccess } = useWaitForTransactionReceipt({ hash: approveTx })
   const { isLoading: confirming } = useWaitForTransactionReceipt({ hash: txHash })
-  const busy = isPending || approveConfirming || confirming
-
-  useEffect(() => { if (approveSuccess) refetchPointsAllow() }, [approveSuccess])  // eslint-disable-line react-hooks/exhaustive-deps
+  const busy = isPending || confirming
 
   async function doUnlock() {
     setTxErr('')
     try {
       const h = await write({
-        address: ADDR.LockLedgerV02 as Address,
-        abi: LEDGER_ABI,
+        address: ADDR.LockManagerV21 as Address,
+        abi: LOCK_MGR_ABI,
         functionName: 'unlock',
-        args: [lock.lockId],
+        args: [lockId],
       })
       setTxHash(h)
       setTimeout(onRefresh, 4000)
@@ -255,45 +261,32 @@ function LockRow({
     setTxErr('')
     try {
       const h = await write({
-        address: ADDR.LockPointsRebateManagerV02 as Address,
-        abi: LOCK_MGR_ABI,
+        address: ADDR.RebateManagerV21 as Address,
+        abi: REBATE_MGR_ABI,
         functionName: 'claimRebate',
-        args: [lock.lockId],
+        args: [lockId],
       })
       setTxHash(h)
       setTimeout(onRefresh, 4000)
     } catch (e) { setTxErr(parseTxError(e)) }
   }
 
-  async function doApprovePoints() {
-    if (!exitInfo) return
-    setTxErr('')
-    try {
-      const h = await write({
-        address: ADDR.PointsToken as Address,
-        abi: POINTS_ABI,
-        functionName: 'approve',
-        args: [ADDR.LockPointsRebateManagerV02 as Address, exitInfo.pointsToReturn],
-      })
-      setApproveTx(h)
-    } catch (e) { setTxErr(parseTxError(e)) }
-  }
-
+  // V21 earlyExit: no points approval needed — LockManager calls debit() internally
   async function doEarlyExit() {
     setTxErr('')
     try {
       const h = await write({
-        address: ADDR.LockPointsRebateManagerV02 as Address,
+        address: ADDR.LockManagerV21 as Address,
         abi: LOCK_MGR_ABI,
         functionName: 'earlyExit',
-        args: [lock.lockId],
+        args: [lockId],
       })
       setTxHash(h)
       setTimeout(onRefresh, 4000)
     } catch (e) { setTxErr(parseTxError(e)) }
   }
 
-  const isFinished = lock.unlocked || lock.earlyExited
+  const isFinished = raw.status === 2 || raw.status === 3
 
   return (
     <div className={`rounded-xl p-4 transition-all ${isFinished ? 'opacity-50' : 'bg-white/60'}`}
@@ -301,26 +294,32 @@ function LockRow({
       {/* Header row */}
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2 min-w-0">
-          <TierBadge tierId={lock.tierId} />
-          <span className="text-xs text-[#434844]/50 font-mono">#{lock.lockId.toString()}</span>
+          <TierBadge committedDuration={raw.committedDuration} />
+          <span className="text-xs text-[#434844]/50 font-mono">#{lockId.toString()}</span>
         </div>
-        <StatusBadge lock={lock} />
+        <StatusBadge status={raw.status} minUnlockTime={raw.minUnlockTime} />
       </div>
 
       {/* Main info */}
       <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
         <div>
           <div className="text-[10px] text-[#434844]/50 uppercase tracking-wide">Locked</div>
-          <div className="font-semibold text-[#1b1c1a] font-mono">{fmtShares(lock.shares)} yrCORE</div>
+          <div className="font-semibold text-[#1b1c1a] font-mono">{fmtYrUSDC(raw.yrUSDCAmount)} yrUSDC</div>
         </div>
         <div>
           <div className="text-[10px] text-[#434844]/50 uppercase tracking-wide">Unlocks</div>
-          <div className="font-semibold text-[#1b1c1a]">{fmtDate(lock.unlockAt)}</div>
+          <div className="font-semibold text-[#1b1c1a]">{fmtDate(raw.minUnlockTime)}</div>
         </div>
-        {lock.rebate > 0n && (
+        <div>
+          <div className="text-[10px] text-[#434844]/50 uppercase tracking-wide">Points</div>
+          <div className="font-semibold text-[#434844]">
+            {fmtPoints(raw.basePointsIssued + raw.bonusPointsIssued)} pts
+          </div>
+        </div>
+        {raw.claimableRebateUSDC > 0n && (
           <div>
             <div className="text-[10px] text-[#434844]/50 uppercase tracking-wide">Claimable Rebate</div>
-            <div className="font-semibold text-[#715a3e]">{fmtPoints(lock.rebate)} Points</div>
+            <div className="font-semibold text-[#715a3e]">${fmtUSDC(raw.claimableRebateUSDC)} USDC</div>
           </div>
         )}
       </div>
@@ -335,7 +334,7 @@ function LockRow({
               className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-50 transition-opacity"
               style={{ background: 'linear-gradient(135deg, #18281e, #2d3e33)' }}
             >
-              {busy ? 'Signing…' : 'Unlock'}
+              {busy ? (confirming ? 'Confirming…' : 'Signing…') : 'Unlock'}
             </button>
           )}
           {canClaim && (
@@ -345,7 +344,7 @@ function LockRow({
               className="text-xs font-semibold px-3 py-1.5 rounded-lg text-[#715a3e] disabled:opacity-50 transition-opacity"
               style={{ background: '#fdf8f3', border: '1px solid #715a3e40' }}
             >
-              {busy ? 'Signing…' : `Claim ${fmtPoints(lock.rebate)} Points`}
+              {busy ? 'Signing…' : `Claim $${fmtUSDC(raw.claimableRebateUSDC)} Rebate`}
             </button>
           )}
           {canEarlyExit && (
@@ -360,45 +359,40 @@ function LockRow({
         </div>
       )}
 
-      {/* Early exit expanded panel */}
+      {/* Early exit expanded panel — V21: no points approval needed */}
       {expanded && canEarlyExit && (
         <div className="mt-3 rounded-xl p-3 space-y-2" style={{ background: '#fff8f8', border: '1px solid #fca5a540' }}>
-          {exitInfo ? (
-            <>
-              <div className="text-[11px] text-red-600 font-semibold">Early Exit Penalty</div>
-              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-                <div>
-                  <span className="text-[#434844]/50">Return Points</span>
-                  <div className="font-mono font-semibold text-red-600">{fmtPoints(exitInfo.pointsToReturn)} Points</div>
-                </div>
-                <div>
-                  <span className="text-[#434844]/50">Days remaining</span>
-                  <div className="font-semibold text-[#434844]">{daysLeft(lock.unlockAt)}d</div>
-                </div>
+          <div className="text-[11px] text-red-600 font-semibold">Early Exit</div>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+            <div>
+              <span className="text-[#434844]/50">Points forfeited</span>
+              <div className="font-mono font-semibold text-red-600">
+                {fmtPoints(raw.basePointsIssued + raw.bonusPointsIssued)} pts
               </div>
-              <div className="flex items-center justify-between gap-2 pt-1">
-                {exitInfo.pointsToReturn > 0n && (
-                  <StepDots steps={['Authorize', 'Exit']} current={needsPointsApprove ? 1 : 2} />
-                )}
-                <button
-                  onClick={needsPointsApprove ? doApprovePoints : doEarlyExit}
-                  disabled={busy}
-                  className="ml-auto text-xs font-bold px-3 py-1.5 rounded-lg text-white disabled:opacity-50 transition-opacity"
-                  style={{ background: 'linear-gradient(135deg, #7f1d1d, #b91c1c)' }}
-                >
-                  {isPending
-                    ? 'Signing…'
-                    : (approveConfirming || confirming)
-                      ? 'Confirming…'
-                      : needsPointsApprove
-                        ? 'Authorize Points'
-                        : 'Confirm Exit'}
-                </button>
-              </div>
-            </>
-          ) : (
-            <div className="text-xs text-[#434844]/50 text-center py-2">Loading exit details…</div>
-          )}
+            </div>
+            <div>
+              <span className="text-[#434844]/50">Days remaining</span>
+              <div className="font-semibold text-[#434844]">{daysLeft(raw.minUnlockTime)}d</div>
+            </div>
+            <div>
+              <span className="text-[#434844]/50">Rebate lost</span>
+              <div className="font-semibold text-red-600">${fmtUSDC(raw.claimableRebateUSDC)}</div>
+            </div>
+            <div>
+              <span className="text-[#434844]/50">yrUSDC returned</span>
+              <div className="font-semibold text-[#18281e]">{fmtYrUSDC(raw.yrUSDCAmount)}</div>
+            </div>
+          </div>
+          <div className="flex items-center justify-end gap-2 pt-1">
+            <button
+              onClick={doEarlyExit}
+              disabled={busy}
+              className="text-xs font-bold px-3 py-1.5 rounded-lg text-white disabled:opacity-50 transition-opacity"
+              style={{ background: 'linear-gradient(135deg, #7f1d1d, #b91c1c)' }}
+            >
+              {isPending ? 'Signing…' : confirming ? 'Confirming…' : 'Confirm Exit'}
+            </button>
+          </div>
         </div>
       )}
 
@@ -429,33 +423,42 @@ export default function Locks() {
     return new Date(ts * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
   }, [tier, parsedShares])
 
-  // ── User balances & allowance ────────────────────────────────────────────
+  // ── User yrUSDC balance & allowance to LockManagerV21 ───────────────────
   const { data: balData, refetch: refetchBal } = useReadContracts({
     contracts: [
-      { address: ADDR.YearRingCoreVaultV01 as Address, abi: VAULT_ABI, functionName: 'balanceOf', args: [address as Address] },
-      { address: ADDR.YearRingCoreVaultV01 as Address, abi: VAULT_ABI, functionName: 'allowance', args: [address as Address, ADDR.LockLedgerV02 as Address] },
+      { address: ADDR.YearRingCoreVaultV21 as Address, abi: VAULT_ABI, functionName: 'balanceOf', args: [address as Address] },
+      { address: ADDR.YearRingCoreVaultV21 as Address, abi: VAULT_ABI, functionName: 'allowance', args: [address as Address, ADDR.LockManagerV21 as Address] },
     ],
     query: { enabled: !!address, refetchInterval: 15_000 },
   })
-  const fbBalance  = (balData?.[0]?.result as bigint | undefined) ?? 0n
-  const fbAllowance = (balData?.[1]?.result as bigint | undefined) ?? 0n
+  const yrUSDCBalance  = (balData?.[0]?.result as bigint | undefined) ?? 0n
+  const yrUSDCAllowance = (balData?.[1]?.result as bigint | undefined) ?? 0n
 
-  // ── Lock IDs ─────────────────────────────────────────────────────────────
+  // ── Points balance ───────────────────────────────────────────────────────
+  const { data: pointsBalRaw } = useReadContract({
+    address: ADDR.PointsLedgerV01 as Address, abi: POINTS_ABI,
+    functionName: 'balanceOf',
+    args: [address ?? '0x0000000000000000000000000000000000000000'],
+    query: { enabled: !!address, refetchInterval: 15_000 },
+  })
+  const pointsBalance = (pointsBalRaw as bigint | undefined) ?? 0n
+
+  // ── Lock IDs (paginated) ─────────────────────────────────────────────────
   const { data: lockIdsRaw, isLoading: idsLoading, error: idsError, refetch: refetchIds } = useReadContract({
-    address: ADDR.LockLedgerV02 as Address,
-    abi: LEDGER_ABI,
-    functionName: 'userLockIds',
-    args: [address as Address],
+    address: ADDR.LockManagerV21 as Address,
+    abi: LOCK_MGR_ABI,
+    functionName: 'getUserLockIds',
+    args: [address as Address, 0n, 1000n],
     query: { enabled: !!address },
   })
-  const lockIds = (lockIdsRaw as bigint[] | undefined) ?? []
+  // Returns (uint256[] lockIds, uint256 total)
+  const lockIds = ((lockIdsRaw as [bigint[], bigint] | undefined)?.[0]) ?? []
 
-  // ── Per-lock reads (batched) ──────────────────────────────────────────────
-  const lockContracts = useMemo(() => lockIds.flatMap(id => [
-    { address: ADDR.LockLedgerV02 as Address, abi: LEDGER_ABI, functionName: 'getLock' as const, args: [id] },
-    { address: ADDR.LockBenefitV02 as Address, abi: BENEFIT_ABI, functionName: 'tierOf' as const, args: [id] },
-    { address: ADDR.LockPointsRebateManagerV02 as Address, abi: LOCK_MGR_ABI, functionName: 'previewRebate' as const, args: [id] },
-  ]), [lockIds.join(',')])  // eslint-disable-line react-hooks/exhaustive-deps
+  // ── Per-lock reads (getLock only — all data is in the struct) ────────────
+  const lockContracts = useMemo(() => lockIds.map(id => ({
+    address: ADDR.LockManagerV21 as Address, abi: LOCK_MGR_ABI,
+    functionName: 'getLock' as const, args: [id],
+  })), [lockIds.join(',')])  // eslint-disable-line react-hooks/exhaustive-deps
 
   const { data: lockBatch, isLoading: batchLoading, error: batchError, refetch: refetchBatch } = useReadContracts({
     contracts: lockContracts,
@@ -465,23 +468,22 @@ export default function Locks() {
   const locks: LockInfo[] = useMemo(() => {
     if (!lockBatch || lockBatch.length === 0) return []
     return lockIds.map((id, i) => {
-      const base   = lockBatch[i * 3]?.result as { owner: Address; shares: bigint; lockedAt: bigint; unlockAt: bigint; unlocked: boolean; earlyExited: boolean } | undefined
-      const tierId = Number((lockBatch[i * 3 + 1]?.result as bigint | undefined) ?? 0n)
-      const rebate = (lockBatch[i * 3 + 2]?.result as bigint | undefined) ?? 0n
-      if (!base) return null
-      return { lockId: id, ...base, tierId, rebate }
+      const raw = lockBatch[i]?.result as V21LockRaw | undefined
+      if (!raw) return null
+      return { lockId: id, raw }
     }).filter(Boolean) as LockInfo[]
   }, [lockBatch, lockIds])
 
-  // Computed locked shares
-  const lockedShares = useMemo(() =>
-    locks.filter(l => !l.unlocked && !l.earlyExited).reduce((s, l) => s + l.shares, 0n),
+  // Computed locked shares (Active locks only)
+  const lockedYrUSDC = useMemo(() =>
+    locks.filter(l => l.raw.status === 1).reduce((s, l) => s + l.raw.yrUSDCAmount, 0n),
     [locks]
   )
-  const freeBalance = fbBalance > lockedShares ? fbBalance - lockedShares : 0n
+  // Available yrUSDC = total vault balance (wallet holds yrUSDC; locked shares are held by LockManager)
+  const freeBalance = yrUSDCBalance
 
   // ── Step logic ──────────────────────────────────────────────────────────
-  const needsApprove = parsedShares > 0n && fbAllowance < parsedShares
+  const needsApprove = parsedShares > 0n && yrUSDCAllowance < parsedShares
   const step = needsApprove ? 1 : 2
 
   // ── Write contract ──────────────────────────────────────────────────────
@@ -490,10 +492,7 @@ export default function Locks() {
   const { isLoading: lockConfirming,   isSuccess: lockSuccess    } = useWaitForTransactionReceipt({ hash: lockTxHash })
   const busy = isPending || approveConfirming || lockConfirming
 
-  // Refetch allowance immediately after approve confirms
   useEffect(() => { if (approveSuccess) refetchBal() }, [approveSuccess])  // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Clear amount + refresh locks after lock confirms
   useEffect(() => {
     if (lockSuccess) { setAmount(''); handleRefresh() }
   }, [lockSuccess])  // eslint-disable-line react-hooks/exhaustive-deps
@@ -508,10 +507,10 @@ export default function Locks() {
     setTxErr('')
     try {
       const h = await writeContractAsync({
-        address: ADDR.YearRingCoreVaultV01 as Address,
+        address: ADDR.YearRingCoreVaultV21 as Address,
         abi: VAULT_ABI,
         functionName: 'approve',
-        args: [ADDR.LockLedgerV02 as Address, parsedShares],
+        args: [ADDR.LockManagerV21 as Address, parsedShares],
       })
       setApproveTxHash(h)
     } catch (e) { setTxErr(parseTxError(e)) }
@@ -521,9 +520,9 @@ export default function Locks() {
     setTxErr('')
     try {
       const h = await writeContractAsync({
-        address: ADDR.LockPointsRebateManagerV02 as Address,
+        address: ADDR.LockManagerV21 as Address,
         abi: LOCK_MGR_ABI,
-        functionName: 'lockWithPoints',
+        functionName: 'createLock',
         args: [parsedShares, BigInt(tier.duration)],
       })
       setLockTxHash(h)
@@ -533,16 +532,14 @@ export default function Locks() {
   const overBalance = parsedShares > 0n && parsedShares > freeBalance
   const canSubmit = !!address && parsedShares > 0n && !overBalance && !busy
 
-  // ── Active locks (exclude finished) ──────────────────────────────────────
   const locksLoading  = idsLoading || (lockIds.length > 0 && batchLoading)
   const locksError    = idsError ?? batchError
-  const activeLocks   = locks.filter(l => !l.unlocked && !l.earlyExited)
-  const finishedLocks = locks.filter(l => l.unlocked || l.earlyExited)
+  const activeLocks   = locks.filter(l => l.raw.status === 1)
+  const finishedLocks = locks.filter(l => l.raw.status === 2 || l.raw.status === 3)
 
   if (!address) {
     return (
       <div className="max-w-2xl mx-auto px-5 md:px-6 py-8 space-y-4">
-        {/* Mechanism explainer */}
         <div className="rounded-2xl p-5 space-y-4" style={{ background: '#f5f5f0' }}>
           <div className="flex items-center gap-2">
             <span className="material-symbols-outlined text-base text-[#715a3e]">lock</span>
@@ -551,13 +548,13 @@ export default function Locks() {
             </span>
           </div>
           <p className="text-xs text-[#434844]/70 leading-relaxed">
-            Locking commits yrCORE shares for a fixed term. In exchange you receive a management fee rebate for the duration of the lock, plus Points when the lock matures. Points are the protocol's governance token — they grant voting power on protocol parameter proposals.
+            Locking commits yrUSDC shares for a fixed term. In exchange you receive a management fee rebate for the duration of the lock, plus Points that represent your contribution to the protocol.
           </p>
           <div className="grid grid-cols-1 gap-2">
             {([
-              ['token',              'Bronze · 30 days — 20% fee rebate · 1.0× Points'],
-              ['workspace_premium',  'Silver · 90 days — 40% fee rebate · 1.3× Points'],
-              ['military_tech',      'Gold · 180 days — 60% fee rebate · 1.8× Points'],
+              ['token',             'Bronze · 30 days — 20% fee rebate · 1.0× Points'],
+              ['workspace_premium', 'Silver · 90 days — 40% fee rebate · 1.3× Points'],
+              ['military_tech',     'Gold · 180 days — 60% fee rebate · 1.8× Points'],
             ] as const).map(([icon, text]) => (
               <div key={icon} className="flex items-start gap-2.5 px-3 py-2.5 rounded-lg" style={{ background: '#fff', border: '1px solid #e8e8e2' }}>
                 <span className="material-symbols-outlined text-base text-[#715a3e] flex-shrink-0 mt-0.5">{icon}</span>
@@ -578,12 +575,23 @@ export default function Locks() {
   return (
     <div className="max-w-2xl mx-auto px-5 md:px-6 py-8 space-y-8">
 
+      {/* ── Points balance strip ───────────────────────────────────────────── */}
+      {pointsBalance > 0n && (
+        <div className="rounded-xl px-4 py-3 flex items-center gap-3" style={{ background: '#f5f5f0' }}>
+          <span className="material-symbols-outlined text-base text-[#715a3e]">stars</span>
+          <span className="text-xs text-[#434844]/60">Your Points</span>
+          <span className="text-sm font-bold text-[#1b1c1a] ml-auto" style={{ fontFamily: "'Noto Serif', serif" }}>
+            {fmtPoints(pointsBalance)}
+          </span>
+        </div>
+      )}
+
       {/* ── Lock mechanism summary ─────────────────────────────────────────── */}
       <div className="rounded-xl px-4 py-3 flex flex-wrap gap-x-6 gap-y-1.5" style={{ background: '#f5f5f0' }}>
         {[
           ['Fee rebate', 'Applied for the full lock duration — starts immediately'],
-          ['Points reward', 'Distributed at unlock. Used for governance voting.'],
-          ['Early exit', 'Available at any time — rebate and Points reward are forfeited'],
+          ['Points reward', 'Credited at each checkpoint and at unlock.'],
+          ['Early exit', 'Available at any time — rebate and Points are forfeited'],
         ].map(([k, v]) => (
           <div key={k} className="flex items-center gap-1.5">
             <span className="text-[10px] font-bold text-[#434844]/50">{k}</span>
@@ -598,7 +606,6 @@ export default function Locks() {
           New Lock
         </h2>
 
-        {/* Tier cards: horizontal scroll on mobile, flex on desktop */}
         <div className="flex gap-3 overflow-x-auto pb-1 md:overflow-visible scrollbar-none">
           {TIERS.map(t => (
             <TierCard
@@ -615,7 +622,7 @@ export default function Locks() {
           <div className="flex items-center justify-between mb-1.5">
             <label className="text-xs font-semibold text-[#434844]">Amount to lock</label>
             <span className="text-[11px] text-[#434844]/50">
-              Available: <span className="font-mono">{fmtShares(freeBalance)}</span> yrCORE
+              Available: <span className="font-mono">{fmtYrUSDC(freeBalance)}</span> yrUSDC
             </span>
           </div>
           <div className="relative">
@@ -657,19 +664,18 @@ export default function Locks() {
               </div>
               <div>
                 <div className="text-[10px] text-[#434844]/50">Fee Rebate</div>
-                <div className="font-semibold text-[#715a3e]">{tier.feeDiscountBps / 100}% off mgmt fee</div>
+                <div className="font-semibold text-[#715a3e]">{tier.feeRebatePct}% off mgmt fee</div>
               </div>
               <div>
                 <div className="text-[10px] text-[#434844]/50">Points Reward</div>
                 <div className="font-semibold text-[#434844]">
-                  {fmtPoints(parsedShares * BigInt(tier.multiplierBps) / 10000n)} Points
+                  {fmtPoints(parsedShares * BigInt(tier.multiplierBps) / 10000n)} pts (est.)
                 </div>
               </div>
             </div>
           </div>
         )}
 
-        {/* Balance error */}
         {overBalance && (
           <p className="mt-2 text-[11px] text-red-500 flex items-center gap-1">
             <span className="material-symbols-outlined text-sm">error</span>
@@ -677,7 +683,6 @@ export default function Locks() {
           </p>
         )}
 
-        {/* Action row */}
         <div className="mt-4 flex items-center justify-between gap-3">
           <div>
             {parsedShares > 0n && (
@@ -695,12 +700,11 @@ export default function Locks() {
               : (approveConfirming || lockConfirming)
                 ? 'Confirming…'
                 : needsApprove
-                  ? 'Approve yrCORE'
+                  ? 'Approve yrUSDC'
                   : 'Lock'}
           </button>
         </div>
 
-        {/* Approve confirmed */}
         {approveSuccess && needsApprove === false && !lockSuccess && (
           <div className="mt-3 flex items-center gap-1.5 text-xs text-[#715a3e] bg-[#fdf8f3] rounded-xl px-3 py-2">
             <span className="material-symbols-outlined text-base">check_circle</span>
@@ -708,7 +712,6 @@ export default function Locks() {
           </div>
         )}
 
-        {/* Lock success */}
         {lockSuccess && lockTxHash && (
           <div className="mt-3 flex items-center gap-2 text-xs text-emerald-700 bg-emerald-50 rounded-xl px-3 py-2">
             <span className="material-symbols-outlined text-base">check_circle</span>
@@ -734,7 +737,7 @@ export default function Locks() {
           </h2>
           {activeLocks.length > 0 && (
             <span className="text-xs text-[#434844]/50">
-              {activeLocks.length} lock{activeLocks.length > 1 ? 's' : ''} · {fmtShares(lockedShares)} yrCORE
+              {activeLocks.length} lock{activeLocks.length > 1 ? 's' : ''} · {fmtYrUSDC(lockedYrUSDC)} yrUSDC
             </span>
           )}
         </div>
@@ -766,7 +769,7 @@ export default function Locks() {
             style={{ background: '#fff', border: '1px solid #e8e8e2' }}>
             <span className="material-symbols-outlined text-2xl text-[#c3c8c2] mb-2">lock_open</span>
             <p className="text-xs font-semibold text-[#434844]/60">No active locks</p>
-            <p className="text-[11px] text-[#434844]/35 mt-1">Choose a tier above and lock yrCORE shares to start earning rebates and Points.</p>
+            <p className="text-[11px] text-[#434844]/35 mt-1">Choose a tier above and lock yrUSDC shares to start earning rebates and Points.</p>
           </div>
         ) : (
           <div className="space-y-3" key={refreshSig}>
@@ -777,7 +780,7 @@ export default function Locks() {
         )}
       </div>
 
-      {/* ── Section: Past Locks (collapsed) ───────────────────────────────── */}
+      {/* ── Section: Past Locks ───────────────────────────────────────────── */}
       {finishedLocks.length > 0 && (
         <div>
           <h2 className="text-sm font-semibold text-[#434844]/50 mb-3">

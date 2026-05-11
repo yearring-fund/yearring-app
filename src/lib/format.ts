@@ -9,7 +9,7 @@ export function formatUSDC(raw: bigint, decimals = 2): string {
   })
 }
 
-// Shares: 18 decimals (fbUSDC)
+// Shares: 18 decimals (yrCORE)
 export function formatShares(raw: bigint, decimals = 4): string {
   const n = Number(raw) / 1e18
   return n.toLocaleString('en-US', {

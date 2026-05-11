@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useAccount, usePublicClient, useReadContracts, useReadContract } from 'wagmi'
-import { formatUnits, type Address } from 'viem'
+import { formatUnits, getEventSelector, type Address } from 'viem'
 import { ADDR, VAULT_ABI, POINTS_ABI } from '../../lib/contracts'
 import { Sk } from '../../components/ui/Skeleton'
 
@@ -25,8 +25,10 @@ interface PointsItem {
 }
 
 // ── Constants ──────────────────────────────────────────────────────────────
-const TRANSFER_SIG  = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef' as `0x${string}`
-const ZERO_TOPIC    = '0x0000000000000000000000000000000000000000000000000000000000000000' as `0x${string}`
+const TRANSFER_SIG         = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef' as `0x${string}`
+const ZERO_TOPIC           = '0x0000000000000000000000000000000000000000000000000000000000000000' as `0x${string}`
+const POINTS_CREDITED_SIG  = getEventSelector('PointsCredited(address,uint256,uint8)') as `0x${string}`
+const POINTS_DEBITED_SIG   = getEventSelector('PointsDebited(address,uint256)') as `0x${string}`
 const DEFAULT_RANGE = 50_000n
 const STEP_RANGE    = 100_000n
 const ZERO_ADDR     = '0x0000000000000000000000000000000000000000'
@@ -161,7 +163,7 @@ function ShareRow({ item }: { item: ShareItem }) {
       <div className="text-right flex-shrink-0">
         <div className="text-xs font-semibold font-mono" style={{ color: cfg.color }}>
           {isIn ? '+' : '−'}{fmtShares(item.amount)}{' '}
-          <span className="text-[10px] font-normal text-[#434844]/40">yrCORE</span>
+          <span className="text-[10px] font-normal text-[#434844]/40">yrUSDC</span>
         </div>
         <div className="text-[10px] text-[#434844]/40">{item.timestamp ? fmtTime(item.timestamp) : '—'}</div>
       </div>
@@ -189,7 +191,7 @@ function PointsRow({ item }: { item: PointsItem }) {
       <div className="text-right flex-shrink-0">
         <div className="text-xs font-semibold font-mono" style={{ color: cfg.color }}>
           {item.type === 'Earned' ? '+' : '−'}{fmtPoints(item.amount)}{' '}
-          <span className="text-[10px] font-normal text-[#434844]/40">YRPTS</span>
+          <span className="text-[10px] font-normal text-[#434844]/40">PTS</span>
         </div>
         <div className="text-[10px] text-[#434844]/40">{item.timestamp ? fmtTime(item.timestamp) : '—'}</div>
       </div>
@@ -226,30 +228,30 @@ export default function Activity() {
   // ── Balance reads ─────────────────────────────────────────────────────
   const { data: balReads } = useReadContracts({
     contracts: [
-      { address: ADDR.YearRingCoreVaultV01 as Address, abi: VAULT_ABI, functionName: 'balanceOf', args: [address ?? ZERO_ADDR as Address] },
-      { address: ADDR.PointsToken          as Address, abi: POINTS_ABI, functionName: 'balanceOf', args: [address ?? ZERO_ADDR as Address] },
+      { address: ADDR.YearRingCoreVaultV21 as Address, abi: VAULT_ABI, functionName: 'balanceOf', args: [address ?? ZERO_ADDR as Address] },
+      { address: ADDR.PointsLedgerV01      as Address, abi: POINTS_ABI, functionName: 'balanceOf', args: [address ?? ZERO_ADDR as Address] },
     ],
     query: { enabled: isConnected && !!address, refetchInterval: 15_000 },
   })
-  const yrCOREBal = (balReads?.[0]?.result as bigint | undefined) ?? 0n
+  const yrUSDCBal = (balReads?.[0]?.result as bigint | undefined) ?? 0n
   const ptsBal    = (balReads?.[1]?.result as bigint | undefined) ?? 0n
 
   const { data: usdcEquivRaw } = useReadContract({
-    address: ADDR.YearRingCoreVaultV01 as Address, abi: VAULT_ABI,
+    address: ADDR.YearRingCoreVaultV21 as Address, abi: VAULT_ABI,
     functionName: 'convertToAssets',
-    args: [yrCOREBal > 0n ? yrCOREBal : 1_000_000_000_000n],
+    args: [yrUSDCBal > 0n ? yrUSDCBal : 1_000_000_000_000n],
     query: { enabled: isConnected },
   })
-  const usdcEquiv = isConnected && yrCOREBal > 0n ? (usdcEquivRaw as bigint | undefined) ?? 0n : 0n
+  const usdcEquiv = isConnected && yrUSDCBal > 0n ? (usdcEquivRaw as bigint | undefined) ?? 0n : 0n
 
   const shareSubtitle = isConnected
-    ? `Current balance: ${fmtShares(yrCOREBal)} yrCORE · ≈ $${fmtUSDC(usdcEquiv)} USDC`
+    ? `Current balance: ${fmtShares(yrUSDCBal)} yrUSDC · ≈ $${fmtUSDC(usdcEquiv)} USDC`
     : undefined
   const ptsSubtitle = isConnected
     ? `Current balance: ${fmtPoints(ptsBal)} YRPTS`
     : undefined
 
-  // ── yrCORE log state ──────────────────────────────────────────────────
+  // ── yrUSDC log state ──────────────────────────────────────────────────
   const [shareItems,    setShareItems]    = useState<ShareItem[]>([])
   const [shareLoading,  setShareLoading]  = useState(false)
   const [shareLoadMore, setShareLoadMore] = useState(false)
@@ -265,7 +267,7 @@ export default function Activity() {
   const [ptHasMore,  setPtHasMore]  = useState(true)
   const [ptError,    setPtError]    = useState('')
 
-  // ── Fetch yrCORE logs ─────────────────────────────────────────────────
+  // ── Fetch yrUSDC logs ─────────────────────────────────────────────────
   const fetchShareLogs = useCallback(async (rangeStart: bigint, append = false) => {
     if (!address || !publicClient) return
     append ? setShareLoadMore(true) : setShareLoading(true)
@@ -274,13 +276,13 @@ export default function Activity() {
       const latest  = await publicClient.getBlockNumber()
       const from    = rangeStart > latest ? 0n : rangeStart
       const padded  = padTopic(address)
-      const lockPad = padTopic(ADDR.LockLedgerV02)
+      const lockPad = padTopic(ADDR.LockManagerV21)
 
       const [fromUser, toUser] = await Promise.all([
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        publicClient.getLogs({ address: ADDR.YearRingCoreVaultV01 as Address, topics: [TRANSFER_SIG, padded, null], fromBlock: from, toBlock: 'latest' } as any),
+        publicClient.getLogs({ address: ADDR.YearRingCoreVaultV21 as Address, topics: [TRANSFER_SIG, padded, null], fromBlock: from, toBlock: 'latest' } as any),
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        publicClient.getLogs({ address: ADDR.YearRingCoreVaultV01 as Address, topics: [TRANSFER_SIG, null, padded], fromBlock: from, toBlock: 'latest' } as any),
+        publicClient.getLogs({ address: ADDR.YearRingCoreVaultV21 as Address, topics: [TRANSFER_SIG, null, padded], fromBlock: from, toBlock: 'latest' } as any),
       ])
 
       function classify(l: typeof fromUser[0]): ShareTxType | null {
@@ -318,7 +320,7 @@ export default function Activity() {
       setShareFrom(from)
       setShareHasMore(from > 0n)
     } catch {
-      setShareError('Failed to load yrCORE activity. Try again.')
+      setShareError('Failed to load yrUSDC activity. Try again.')
     } finally {
       setShareLoading(false)
       setShareLoadMore(false)
@@ -335,16 +337,18 @@ export default function Activity() {
       const from   = rangeStart > latest ? 0n : rangeStart
       const padded = padTopic(address)
 
-      const [fromUser, toUser] = await Promise.all([
+      // PointsLedgerV01 emits PointsCredited(to indexed, amount, pointsType indexed)
+      // and PointsDebited(from indexed, amount).
+      const [creditedLogs, debitedLogs] = await Promise.all([
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        publicClient.getLogs({ address: ADDR.PointsToken as Address, topics: [TRANSFER_SIG, padded, null], fromBlock: from, toBlock: 'latest' } as any),
+        publicClient.getLogs({ address: ADDR.PointsLedgerV01 as Address, topics: [POINTS_CREDITED_SIG, padded], fromBlock: from, toBlock: 'latest' } as any),
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        publicClient.getLogs({ address: ADDR.PointsToken as Address, topics: [TRANSFER_SIG, null, padded], fromBlock: from, toBlock: 'latest' } as any),
+        publicClient.getLogs({ address: ADDR.PointsLedgerV01 as Address, topics: [POINTS_DEBITED_SIG, padded], fromBlock: from, toBlock: 'latest' } as any),
       ])
 
       const raw: PointsItem[] = [
-        ...toUser.map(l  => ({ type: 'Earned'   as PointsTxType, amount: BigInt(l.data), txHash: l.transactionHash ?? '', blockNumber: l.blockNumber ?? 0n, timestamp: null })),
-        ...fromUser.map(l => ({ type: 'Deducted' as PointsTxType, amount: BigInt(l.data), txHash: l.transactionHash ?? '', blockNumber: l.blockNumber ?? 0n, timestamp: null })),
+        ...creditedLogs.map(l => ({ type: 'Earned'   as PointsTxType, amount: BigInt(l.data), txHash: l.transactionHash ?? '', blockNumber: l.blockNumber ?? 0n, timestamp: null })),
+        ...debitedLogs.map(l  => ({ type: 'Deducted' as PointsTxType, amount: BigInt(l.data), txHash: l.transactionHash ?? '', blockNumber: l.blockNumber ?? 0n, timestamp: null })),
       ]
       raw.sort((a, b) => (a.blockNumber > b.blockNumber ? -1 : 1))
 
@@ -394,10 +398,10 @@ export default function Activity() {
   return (
     <div className="max-w-2xl mx-auto px-5 md:px-6 py-8 space-y-10">
 
-      {/* ── yrCORE Section ───────────────────────────────────────────────── */}
+      {/* ── yrUSDC Section ───────────────────────────────────────────────── */}
       <section>
         <SectionHeader
-          title="yrCORE Shares"
+          title="yrUSDC Shares"
           icon="account_balance"
           count={shareItems.length}
           accent="#18281e"
@@ -425,7 +429,7 @@ export default function Activity() {
           <div className="rounded-2xl flex flex-col items-center justify-center py-10 text-center"
             style={{ background: '#f5f5f0' }}>
             <span className="material-symbols-outlined text-2xl text-[#c3c8c2] mb-2">account_balance</span>
-            <p className="text-xs text-[#434844]/50">No yrCORE transactions found</p>
+            <p className="text-xs text-[#434844]/50">No yrUSDC transactions found</p>
             <p className="text-[10px] text-[#434844]/30 mt-1">in the last ~4 days</p>
           </div>
         ) : (

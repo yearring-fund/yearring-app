@@ -8,9 +8,10 @@ import {
   useWriteContract,
   useWaitForTransactionReceipt,
 } from 'wagmi'
+import { keepPreviousData } from '@tanstack/react-query'
 import { parseUnits, formatUnits, type Address } from 'viem'
 import {
-  ADDR, VAULT_ABI, USDC_ABI, AAVE_POOL_ABI, AAVE_V3_POOL_BASE, LEDGER_ABI, STRAT_MGR_ABI, POINTS_ABI,
+  ADDR, VAULT_ABI, USDC_ABI, LOCK_MGR_ABI, CORE_SM_ABI, POINTS_ABI, AAVE_POOL_ABI, AAVE_V3_POOL_BASE,
 } from '../../lib/contracts'
 import { parseTxError, parseReadError } from '../../lib/txError'
 import { Sk } from '../../components/ui/Skeleton'
@@ -103,7 +104,7 @@ function StructureFlow({ reservePct }: { reservePct: number }) {
   type FlowNode = { icon: string; label: string; sub: string; accent: string; bg: string }
   const nodes: FlowNode[] = [
     { icon: 'person',          label: 'Depositor',    sub: 'USDC',             accent: '#715a3e', bg: 'rgba(113,90,62,0.07)' },
-    { icon: 'account_balance', label: 'yrCORE Vault', sub: 'share accounting', accent: '#18281e', bg: 'rgba(24,40,30,0.06)'  },
+    { icon: 'account_balance', label: 'yrUSDC Vault', sub: 'share accounting', accent: '#18281e', bg: 'rgba(24,40,30,0.06)'  },
     { icon: 'trending_up',     label: 'Aave V3',      sub: 'lending yield',    accent: '#18281e', bg: 'rgba(24,40,30,0.06)'  },
   ]
   return (
@@ -173,204 +174,23 @@ function StructureFlow({ reservePct }: { reservePct: number }) {
   )
 }
 
-// ── Emergency Exit Panel ───────────────────────────────────────────────────
-type ExitRound = {
-  snapshotId: bigint
-  snapshotTotalSupply: bigint
-  availableAssets: bigint
-  totalClaimed: bigint
-  isOpen: boolean
-  snapshotTimestamp: bigint
-}
-
-function EmergencyExitPanel({ fbUsdcBalance }: { fbUsdcBalance: bigint }) {
-  const { address } = useAccount()
-  const [burnAmt, setBurnAmt] = useState('')
-  const [txErr,  setTxErr]   = useState('')
-
-  const { data: roundId, refetch: refetchRoundId } = useReadContract({
-    address: ADDR.YearRingCoreVaultV01 as Address, abi: VAULT_ABI,
-    functionName: 'currentRoundId',
-    query: { refetchInterval: 10_000 },
-  })
-
-  const rid = roundId as bigint | undefined
-  const roundEnabled = !!rid && rid > 0n
-
-  const { data: roundData, refetch: refetchRound } = useReadContract({
-    address: ADDR.YearRingCoreVaultV01 as Address, abi: VAULT_ABI,
-    functionName: 'exitRounds', args: [rid as bigint],
-    query: { enabled: roundEnabled },
-  })
-
-  const round = roundData as ExitRound | undefined
-
-  const { data: claimed, refetch: refetchClaimed } = useReadContract({
-    address: ADDR.YearRingCoreVaultV01 as Address, abi: VAULT_ABI,
-    functionName: 'roundSharesClaimed',
-    args: [rid as bigint, address as Address],
-    query: { enabled: roundEnabled && !!address },
-  })
-
-  // snapshot balance = user's yrCORE at the moment Emergency Exit was declared
-  const { data: snapBalRaw } = useReadContract({
-    address: ADDR.YearRingCoreVaultV01 as Address, abi: VAULT_ABI,
-    functionName: 'balanceOfAt',
-    args: [address as Address, round?.snapshotId as bigint],
-    query: { enabled: !!address && !!round && round.snapshotId > 0n },
-  })
-
-  const { writeContractAsync, isPending } = useWriteContract()
-  const [txHash, setTxHash] = useState<`0x${string}` | undefined>()
-  const { isLoading: confirming, isSuccess } = useWaitForTransactionReceipt({ hash: txHash })
-
-  const claimedAmt  = (claimed    as bigint | undefined) ?? 0n
-  const snapBal     = (snapBalRaw as bigint | undefined) ?? 0n
-
-  // Remaining eligible = snapshot balance − already claimed, capped at current free balance
-  const remaining   = snapBal > claimedAmt ? snapBal - claimedAmt : 0n
-  const maxBurn     = remaining < fbUsdcBalance ? remaining : fbUsdcBalance
-
-  const parsedBurn  = safeParse(burnAmt, 18)
-  const estimatedOut = round && round.snapshotTotalSupply > 0n && parsedBurn > 0n
-    ? (parsedBurn * round.availableAssets) / round.snapshotTotalSupply
-    : 0n
-
-  const noRound      = !rid || rid === 0n
-  const isClosed     = round && !round.isOpen
-  const fullyClaimed = round && round.isOpen && snapBal > 0n && remaining === 0n
-  const noEligible   = round && round.isOpen && snapBal === 0n
-
-  function fmtSnapDate(ts: bigint) {
-    return new Date(Number(ts) * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-  }
-
-  const handleClaim = async () => {
-    if (!rid || parsedBurn === 0n) return
-    setTxErr('')
-    try {
-      const hash = await writeContractAsync({
-        address: ADDR.YearRingCoreVaultV01 as Address, abi: VAULT_ABI,
-        functionName: 'claimExitAssets',
-        args: [rid, parsedBurn],
-      })
-      setTxHash(hash)
-      setBurnAmt('')
-      refetchRoundId(); refetchRound(); refetchClaimed()
-    } catch (e) { setTxErr(parseTxError(e)) }
-  }
-
+// ── Emergency Exit Notice (V2.1) ──────────────────────────────────────────
+// V2.1 vault has no round-based exit mechanism. In EmergencyExit mode,
+// all deposits and redeems are suspended. Contact admin for resolution.
+function EmergencyExitPanel(_props: { fbUsdcBalance: bigint }) {
   return (
     <div className="rounded-xl overflow-hidden" style={{ border: '1px solid #fca5a5' }}>
-      {/* Header */}
       <div className="px-5 py-3 flex items-center gap-2" style={{ background: '#dc2626' }}>
         <span className="material-symbols-outlined text-white text-lg">emergency</span>
         <span className="text-white font-bold text-xs tracking-widest uppercase">Emergency Exit Mode</span>
-        {round && (
-          <span className="ml-auto text-[10px] text-white/60">
-            Round #{rid?.toString()} · snapshot {fmtSnapDate(round.snapshotTimestamp)}
-          </span>
-        )}
       </div>
-
-      <div className="px-5 py-4 space-y-4" style={{ background: '#fef2f2' }}>
+      <div className="px-5 py-4 space-y-3" style={{ background: '#fef2f2' }}>
         <p className="text-xs text-red-800 leading-relaxed">
-          Normal deposits and redeems are suspended. Your pro-rata share of available USDC can be claimed by burning yrCORE shares below. Your eligibility is fixed at the snapshot taken when Emergency Exit was declared.
+          The vault is in Emergency Exit mode. All deposits and redeems are suspended pending resolution by the protocol admin.
         </p>
-
-        {noRound ? (
-          <div className="bg-white rounded-lg px-4 py-3 text-xs text-[#434844]/70">
-            No exit round open yet. Waiting for admin to call <code className="font-mono text-[10px] bg-[#f5f3ef] px-1 rounded">openExitModeRound()</code>.
-          </div>
-        ) : isClosed ? (
-          <div className="bg-white rounded-lg px-4 py-3 text-xs text-[#434844]/70">
-            Round #{rid?.toString()} is closed. Waiting for admin to open a new round.
-          </div>
-        ) : fullyClaimed ? (
-          <div className="bg-white rounded-lg px-4 py-3 flex items-center gap-2">
-            <span className="material-symbols-outlined text-base text-emerald-600">check_circle</span>
-            <div>
-              <p className="text-xs font-semibold text-[#1b1c1a]">All eligible shares claimed</p>
-              <p className="text-[11px] text-[#434844]/50 mt-0.5">
-                You claimed {fmtShares(claimedAmt)} yrCORE in this round.
-              </p>
-            </div>
-          </div>
-        ) : noEligible ? (
-          <div className="bg-white rounded-lg px-4 py-3 text-xs text-[#434844]/70">
-            Your wallet held no yrCORE at the snapshot time and is not eligible in this round.
-          </div>
-        ) : round ? (
-          <div className="space-y-3">
-            {/* Round stats */}
-            <div className="grid grid-cols-2 gap-2">
-              {[
-                { label: 'Your snapshot balance', value: `${fmtShares(snapBal)} yrCORE` },
-                { label: 'Already claimed',        value: `${fmtShares(claimedAmt)} yrCORE` },
-                { label: 'Remaining eligible',     value: `${fmtShares(remaining)} yrCORE`,  highlight: remaining > 0n },
-                { label: 'Round available',        value: `$${fmtUSDC(round.availableAssets)} USDC` },
-              ].map(({ label, value, highlight }) => (
-                <div key={label} className="bg-white rounded-lg px-3 py-2.5">
-                  <p className="text-[10px] text-[#434844]/50 mb-0.5">{label}</p>
-                  <p className={`font-bold text-sm ${highlight ? 'text-red-700' : 'text-[#1b1c1a]'}`}>{value}</p>
-                </div>
-              ))}
-            </div>
-
-            {/* Input */}
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-[10px] font-semibold text-[#434844]/60">Shares to burn</span>
-                <span className="text-[10px] text-[#434844]/50">
-                  Eligible: <span className="font-mono font-semibold">{fmtShares(maxBurn)}</span> yrCORE
-                </span>
-              </div>
-              <div className="flex items-center gap-2 bg-white rounded-lg px-3 py-2"
-                style={{ border: '1.5px solid #fca5a5' }}>
-                <input
-                  type="number" min="0" placeholder="0.0000"
-                  value={burnAmt}
-                  onChange={e => setBurnAmt(e.target.value)}
-                  className="flex-1 bg-transparent text-base font-semibold text-[#1b1c1a] outline-none placeholder:text-[#434844]/25 font-mono"
-                />
-                <span className="text-[#434844]/60 text-xs font-semibold">yrCORE</span>
-                <button
-                  onClick={() => maxBurn > 0n && setBurnAmt(formatUnits(maxBurn, 18))}
-                  disabled={maxBurn === 0n}
-                  className="text-[10px] font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded disabled:opacity-30"
-                >MAX</button>
-              </div>
-            </div>
-
-            {/* Estimate */}
-            {parsedBurn > 0n && estimatedOut > 0n && (
-              <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-white">
-                <span className="text-[11px] text-[#434844]/60">You will receive</span>
-                <span className="text-sm font-bold text-[#1b1c1a]">${fmtUSDC(estimatedOut)} USDC</span>
-              </div>
-            )}
-
-            {txErr && (
-              <div className="text-xs text-red-700 bg-red-100 rounded-lg px-3 py-2">{txErr}</div>
-            )}
-            {isSuccess && (
-              <div className="flex items-center gap-1.5 text-xs text-emerald-700 bg-emerald-50 rounded-lg px-3 py-2">
-                <span className="material-symbols-outlined text-sm">check_circle</span>
-                Claimed successfully.{' '}
-                <a href={`https://basescan.org/tx/${txHash}`} target="_blank" rel="noreferrer" className="underline">View</a>
-              </div>
-            )}
-
-            <button
-              disabled={parsedBurn === 0n || parsedBurn > maxBurn || isPending || confirming}
-              onClick={handleClaim}
-              className="w-full py-3 rounded-lg text-sm font-bold text-white disabled:opacity-40 transition-all active:scale-[0.98]"
-              style={{ background: '#dc2626' }}
-            >
-              {confirming ? 'Confirming…' : isPending ? 'Signing…' : 'Claim Exit Assets'}
-            </button>
-          </div>
-        ) : null}
+        <p className="text-xs text-red-700">
+          Contact <a href="mailto:hello@yearringfund.com" className="underline font-semibold">hello@yearringfund.com</a> for status updates.
+        </p>
       </div>
     </div>
   )
@@ -390,81 +210,80 @@ export default function Positions() {
   // ── Batch reads ──────────────────────────────────────────────────────────
   const { data: reads, isLoading: readsLoading, error: readsError, refetch: refetchReads } = useReadContracts({
     contracts: [
-      { address: ADDR.YearRingCoreVaultV01 as Address, abi: VAULT_ABI, functionName: 'balanceOf',      args: [address ?? '0x0000000000000000000000000000000000000000'] },
-      { address: ADDR.YearRingCoreVaultV01 as Address, abi: VAULT_ABI, functionName: 'totalAssets' },
+      { address: ADDR.YearRingCoreVaultV21 as Address, abi: VAULT_ABI, functionName: 'balanceOf',      args: [address ?? '0x0000000000000000000000000000000000000000'] },
+      { address: ADDR.YearRingCoreVaultV21 as Address, abi: VAULT_ABI, functionName: 'totalAssets' },
       { address: ADDR.USDC         as Address, abi: USDC_ABI,  functionName: 'balanceOf',      args: [address ?? '0x0000000000000000000000000000000000000000'] },
-      { address: ADDR.USDC         as Address, abi: USDC_ABI,  functionName: 'allowance',      args: [address ?? '0x0000000000000000000000000000000000000000', ADDR.YearRingCoreVaultV01 as Address] },
-      { address: ADDR.YearRingCoreVaultV01 as Address, abi: VAULT_ABI, functionName: 'depositsPaused' },
-      { address: ADDR.YearRingCoreVaultV01 as Address, abi: VAULT_ABI, functionName: 'redeemsPaused' },
-      { address: ADDR.YearRingCoreVaultV01 as Address, abi: VAULT_ABI, functionName: 'isAllowed',      args: [address ?? '0x0000000000000000000000000000000000000000'] },
-      { address: ADDR.YearRingCoreVaultV01 as Address, abi: VAULT_ABI, functionName: 'systemMode' },
-      { address: ADDR.YearRingCoreVaultV01 as Address, abi: VAULT_ABI, functionName: 'pricePerShare' },
-      { address: ADDR.YearRingCoreVaultV01 as Address, abi: VAULT_ABI, functionName: 'mgmtFeeBpsPerMonth' },
+      { address: ADDR.USDC         as Address, abi: USDC_ABI,  functionName: 'allowance',      args: [address ?? '0x0000000000000000000000000000000000000000', ADDR.YearRingCoreVaultV21 as Address] },
+      // V21: no depositsPaused/redeemsPaused; use systemMode (0=Normal, 1=Paused, 2=EmergencyExit)
+      { address: ADDR.YearRingCoreVaultV21 as Address, abi: VAULT_ABI, functionName: 'systemMode' },
+      // V21: allowlist(address) replaces isAllowed(address)
+      { address: ADDR.YearRingCoreVaultV21 as Address, abi: VAULT_ABI, functionName: 'allowlist',      args: [address ?? '0x0000000000000000000000000000000000000000'] },
+      // V21: convertToAssets(1e18) gives price per share (USDC 6-dec per yrUSDC)
+      { address: ADDR.YearRingCoreVaultV21 as Address, abi: VAULT_ABI, functionName: 'convertToAssets', args: [1000000000000000000n] },
+      // V21: allowlistEnabled state
+      { address: ADDR.YearRingCoreVaultV21 as Address, abi: VAULT_ABI, functionName: 'allowlistEnabled' },
     ],
-    query: { refetchInterval: 10_000 },
+    query: { refetchInterval: 30_000, placeholderData: keepPreviousData },
   })
 
   const fbUsdcBalance  = (reads?.[0]?.result as bigint) ?? 0n
   const totalAssets    = (reads?.[1]?.result as bigint) ?? 0n
   const usdcBalance    = (reads?.[2]?.result as bigint) ?? 0n
   const usdcAllowance  = (reads?.[3]?.result as bigint) ?? 0n
-  const depositsPaused = (reads?.[4]?.result as boolean) ?? false
-  const redeemsPaused  = (reads?.[5]?.result as boolean) ?? false
-  const isAllowed      = isConnected ? ((reads?.[6]?.result as boolean) ?? false) : false
-  const systemModeNum  = reads?.[7]?.result !== undefined ? Number(reads[7].result) : undefined
-  const pps            = (reads?.[8]?.result as bigint) ?? 0n
-  const mgmtFeeBps     = reads?.[9]?.result !== undefined ? (reads[9].result as bigint) : undefined
+  const systemModeNum  = reads?.[4]?.result !== undefined ? Number(reads[4].result) : undefined
+  // V21: systemMode 2=EmergencyExit blocks redeems
+  const redeemsPaused  = systemModeNum === 2
+  const isAllowed      = isConnected ? ((reads?.[5]?.result as boolean) ?? false) : false
+  const pps            = (reads?.[6]?.result as bigint) ?? 0n
+  const allowlistEnabled = (reads?.[7]?.result as boolean) ?? true
+  // V21 has no mgmtFeeBpsPerMonth; fee accrues in CoreStrategyManagerV21 at 50bps/year
+  const mgmtFeeBps: bigint | undefined = undefined
 
-  // ── Locked shares ────────────────────────────────────────────────────────
+  // ── Locked shares (V21 — paginated getUserLockIds) ──────────────────────
   const { data: lockIdsRaw } = useReadContract({
-    address: ADDR.LockLedgerV02 as Address, abi: LEDGER_ABI,
-    functionName: 'userLockIds',
-    args: [address ?? '0x0000000000000000000000000000000000000000'],
-    query: { enabled: isConnected && !!address },
+    address: ADDR.LockManagerV21 as Address, abi: LOCK_MGR_ABI,
+    functionName: 'getUserLockIds',
+    args: [address ?? '0x0000000000000000000000000000000000000000', 0n, 1000n],
+    query: { enabled: isConnected && !!address, placeholderData: keepPreviousData },
   })
-  const lockIds = (lockIdsRaw as bigint[] | undefined) ?? []
+  const lockIds = ((lockIdsRaw as [bigint[], bigint] | undefined)?.[0]) ?? []
 
   const { data: lockReads } = useReadContracts({
     contracts: lockIds.map(id => ({
-      address: ADDR.LockLedgerV02 as Address, abi: LEDGER_ABI,
+      address: ADDR.LockManagerV21 as Address, abi: LOCK_MGR_ABI,
       functionName: 'getLock', args: [id],
     })),
-    query: { enabled: lockIds.length > 0 },
+    query: { enabled: lockIds.length > 0, placeholderData: keepPreviousData },
   })
 
+  // LockStatus.Active = 1; field is yrUSDCAmount (not shares)
   const lockedShares: bigint = (lockReads ?? []).reduce((sum, r) => {
-    const lock = r.result as { shares: bigint; unlocked: boolean; earlyExited: boolean } | undefined
-    if (!lock || lock.unlocked || lock.earlyExited) return sum
-    return sum + lock.shares
+    const lock = r.result as { yrUSDCAmount: bigint; status: number } | undefined
+    if (!lock || lock.status !== 1) return sum
+    return sum + lock.yrUSDCAmount
   }, 0n)
 
-  // ── USDC equivalents ─────────────────────────────────────────────────────
+  // ── USDC equivalents — batched into a single multicall ───────────────────
   const totalShares = fbUsdcBalance + lockedShares
 
-  const { data: holdingsRaw } = useReadContract({
-    address: ADDR.YearRingCoreVaultV01 as Address, abi: VAULT_ABI,
-    functionName: 'convertToAssets',
-    args: [totalShares > 0n ? totalShares : 1_000_000_000_000n],
-  })
-  const { data: lockedUSDCRaw } = useReadContract({
-    address: ADDR.YearRingCoreVaultV01 as Address, abi: VAULT_ABI,
-    functionName: 'convertToAssets',
-    args: [lockedShares > 0n ? lockedShares : 1_000_000_000_000n],
-  })
-  const { data: freeUSDCRaw } = useReadContract({
-    address: ADDR.YearRingCoreVaultV01 as Address, abi: VAULT_ABI,
-    functionName: 'convertToAssets',
-    args: [fbUsdcBalance > 0n ? fbUsdcBalance : 1_000_000_000_000n],
+  const { data: usdcEquivReads } = useReadContracts({
+    contracts: [
+      { address: ADDR.YearRingCoreVaultV21 as Address, abi: VAULT_ABI, functionName: 'convertToAssets', args: [totalShares   > 0n ? totalShares   : 1_000_000_000_000n] },
+      { address: ADDR.YearRingCoreVaultV21 as Address, abi: VAULT_ABI, functionName: 'convertToAssets', args: [lockedShares  > 0n ? lockedShares  : 1_000_000_000_000n] },
+      { address: ADDR.YearRingCoreVaultV21 as Address, abi: VAULT_ABI, functionName: 'convertToAssets', args: [fbUsdcBalance > 0n ? fbUsdcBalance : 1_000_000_000_000n] },
+    ],
+    query: { placeholderData: keepPreviousData },
   })
 
-  const holdingsUSDC  = isConnected && totalShares  > 0n ? (holdingsRaw  as bigint | undefined) ?? 0n : 0n
-  const lockedUSDC    = isConnected && lockedShares > 0n ? (lockedUSDCRaw as bigint | undefined) ?? 0n : 0n
-  const freeUSDC      = isConnected && fbUsdcBalance > 0n ? (freeUSDCRaw  as bigint | undefined) ?? 0n : 0n
+  const holdingsUSDC = isConnected && totalShares   > 0n ? (usdcEquivReads?.[0]?.result as bigint | undefined) ?? 0n : 0n
+  const lockedUSDC   = isConnected && lockedShares  > 0n ? (usdcEquivReads?.[1]?.result as bigint | undefined) ?? 0n : 0n
+  const freeUSDC     = isConnected && fbUsdcBalance > 0n ? (usdcEquivReads?.[2]?.result as bigint | undefined) ?? 0n : 0n
 
   // ── Aave APR ─────────────────────────────────────────────────────────────
   const { data: aaveReserveData } = useReadContract({
     address: AAVE_V3_POOL_BASE as Address, abi: AAVE_POOL_ABI,
     functionName: 'getReserveData', args: [ADDR.USDC as Address],
+    query: { placeholderData: keepPreviousData },
   })
   const aprPct = (() => {
     if (!aaveReserveData) return undefined
@@ -473,10 +292,11 @@ export default function Positions() {
     return (Number((rate * 10000n) / 1_000_000_000_000_000_000_000_000_000n) / 100).toFixed(2)
   })()
 
-  // ── Strategy stats ───────────────────────────────────────────────────────
+  // ── Strategy stats (V21 CoreStrategyManagerV21) ──────────────────────────
   const { data: stratDeployedRaw } = useReadContract({
-    address: ADDR.StrategyManagerV01 as Address, abi: STRAT_MGR_ABI,
+    address: ADDR.CoreStrategyManagerV21 as Address, abi: CORE_SM_ABI,
     functionName: 'totalManagedAssets',
+    query: { placeholderData: keepPreviousData },
   })
   const stratDeployed = (stratDeployedRaw as bigint | undefined) ?? 0n
   const reserveUSDC   = totalAssets > stratDeployed ? totalAssets - stratDeployed : 0n
@@ -484,12 +304,12 @@ export default function Positions() {
     ? Number((reserveUSDC * 10000n) / totalAssets) / 100
     : 0
 
-  // ── Points balance ───────────────────────────────────────────────────────
+  // ── Points balance (V21 PointsLedgerV01 — no approve/allowance) ──────────
   const { data: pointsBalRaw } = useReadContract({
-    address: ADDR.PointsToken as Address, abi: POINTS_ABI,
+    address: ADDR.PointsLedgerV01 as Address, abi: POINTS_ABI,
     functionName: 'balanceOf',
     args: [address ?? '0x0000000000000000000000000000000000000000'],
-    query: { enabled: isConnected && !!address, refetchInterval: 15_000 },
+    query: { enabled: isConnected && !!address, refetchInterval: 30_000, placeholderData: keepPreviousData },
   })
   const pointsBalance = (pointsBalRaw as bigint | undefined) ?? 0n
 
@@ -527,9 +347,10 @@ export default function Positions() {
           if (blockNumber < 0n) continue
           try {
             const result = await publicClient!.readContract({
-              address: ADDR.YearRingCoreVaultV01 as Address,
+              address: ADDR.YearRingCoreVaultV21 as Address,
               abi: VAULT_ABI,
-              functionName: 'pricePerShare',
+              functionName: 'convertToAssets',
+              args: [1000000000000000000n],
               blockNumber,
             }) as bigint
             const block = await publicClient!.getBlock({ blockNumber })
@@ -560,12 +381,12 @@ export default function Positions() {
 
   // ── Preview reads ─────────────────────────────────────────────────────────
   const { data: previewShares } = useReadContract({
-    address: ADDR.YearRingCoreVaultV01 as Address, abi: VAULT_ABI,
+    address: ADDR.YearRingCoreVaultV21 as Address, abi: VAULT_ABI,
     functionName: 'previewDeposit', args: [parsedDeposit],
     query: { enabled: parsedDeposit > 0n },
   })
   const { data: previewUSDC } = useReadContract({
-    address: ADDR.YearRingCoreVaultV01 as Address, abi: VAULT_ABI,
+    address: ADDR.YearRingCoreVaultV21 as Address, abi: VAULT_ABI,
     functionName: 'previewRedeem', args: [parsedRedeem],
     query: { enabled: parsedRedeem > 0n },
   })
@@ -594,19 +415,19 @@ export default function Positions() {
   const handleApprove = () => {
     setDepositErr('')
     try {
-      writeApprove({ address: ADDR.USDC as Address, abi: USDC_ABI, functionName: 'approve', args: [ADDR.YearRingCoreVaultV01 as Address, parsedDeposit] })
+      writeApprove({ address: ADDR.USDC as Address, abi: USDC_ABI, functionName: 'approve', args: [ADDR.YearRingCoreVaultV21 as Address, parsedDeposit] })
     } catch(e) { setDepositErr(parseTxError(e)) }
   }
   const handleDeposit = () => {
     setDepositErr('')
     try {
-      writeDeposit({ address: ADDR.YearRingCoreVaultV01 as Address, abi: VAULT_ABI, functionName: 'deposit', args: [parsedDeposit, address as Address] })
+      writeDeposit({ address: ADDR.YearRingCoreVaultV21 as Address, abi: VAULT_ABI, functionName: 'deposit', args: [parsedDeposit, address as Address] })
     } catch(e) { setDepositErr(parseTxError(e)) }
   }
   const handleRedeem = () => {
     setRedeemErr('')
     try {
-      writeRedeem({ address: ADDR.YearRingCoreVaultV01 as Address, abi: VAULT_ABI, functionName: 'redeem', args: [parsedRedeem, address as Address, address as Address] })
+      writeRedeem({ address: ADDR.YearRingCoreVaultV21 as Address, abi: VAULT_ABI, functionName: 'redeem', args: [parsedRedeem, address as Address, address as Address] })
     } catch(e) { setRedeemErr(parseTxError(e)) }
   }
   const handleMaxRedeem = () => fbUsdcBalance > 0n && setRedeemAmt(formatUnits(fbUsdcBalance, 18))
@@ -641,10 +462,9 @@ export default function Positions() {
 
   // ── Button helpers ────────────────────────────────────────────────────────
   const depositBtn = (() => {
-    if (!isConnected)          return { label: 'Connect Wallet',    disabled: true }
-    if (systemModeNum !== 0)   return { label: 'Deposits Disabled', disabled: true }
-    if (depositsPaused)        return { label: 'Deposits Paused',   disabled: true }
-    if (!isAllowed)            return { label: 'Not Allowlisted',   disabled: true }
+    if (!isConnected)                         return { label: 'Connect Wallet',    disabled: true }
+    if (systemModeNum !== 0)                  return { label: 'Deposits Disabled', disabled: true }
+    if (allowlistEnabled && !isAllowed)       return { label: 'Not Allowlisted',   disabled: true }
     if (parsedDeposit === 0n)  return { label: 'Enter Amount',      disabled: true }
     if (parsedDeposit > usdcBalance) return { label: 'Insufficient USDC', disabled: true }
     if (needsApproval) {
@@ -665,7 +485,7 @@ export default function Positions() {
     if (parsedRedeem > fbUsdcBalance) return { label: 'Insufficient Balance', disabled: true }
     if (redeemInflight) return { label: redeemConfirming ? 'Confirming…' : 'Signing…', disabled: true }
     if (redeemSuccess)  return { label: '✓ Redeemed', disabled: true }
-    return { label: 'Redeem yrCORE', disabled: false, action: handleRedeem }
+    return { label: 'Redeem yrUSDC', disabled: false, action: handleRedeem }
   })()
 
   // ── JSX ───────────────────────────────────────────────────────────────────
@@ -729,7 +549,7 @@ export default function Positions() {
           {/* Right: stats */}
           <div className="flex flex-wrap gap-6 md:gap-10">
             {[
-              { label: 'Price per Share', value: pps > 0n ? fmtPPS(pps) : '—', sub: 'yrCORE / USDC' },
+              { label: 'Price per Share', value: pps > 0n ? fmtPPS(pps) : '—', sub: 'yrUSDC / USDC' },
               { label: 'Current APR',     value: aprPct ? `${aprPct}%` : '—',  sub: 'Aave V3 · Estimated' },
               { label: 'Total Assets',    value: totalAssets > 0n ? `$${fmtUSDC(totalAssets)}` : '—', sub: 'Protocol TVL' },
             ].map(({ label, value, sub }) => (
@@ -800,7 +620,7 @@ export default function Positions() {
       )}
 
       {/* ── Allowlist warning ───────────────────────────────────────────── */}
-      {isConnected && !isAllowed && (
+      {isConnected && allowlistEnabled && !isAllowed && (
         <div className="flex items-start gap-2 rounded-xl px-4 py-3 text-xs"
           style={{ background: '#fdf8f3', border: '1px solid #715a3e30' }}>
           <span className="material-symbols-outlined text-base text-[#715a3e] shrink-0">info</span>
@@ -847,7 +667,7 @@ export default function Positions() {
                 ['Asset',         'USDC'],
                 ['Network',       'Base'],
                 ['Strategy',      'Aave V3'],
-                ['Share token',   'yrCORE · ERC-4626'],
+                ['Share token',   'yrUSDC · ERC-4626'],
                 ['Custody',       'Non-custodial'],
                 ['Governance',    '24h Timelock on all admin ops'],
                 ['Exit',          'Emergency exit always available'],
@@ -885,7 +705,7 @@ export default function Positions() {
             <div className="bg-white rounded-lg px-4 py-3 flex justify-between items-center">
               <span className="text-xs text-[#434844]">You receive</span>
               <span className="text-sm font-bold text-[#18281e]">
-                ≈ {fmtShares(previewShares as bigint)} yrCORE
+                ≈ {fmtShares(previewShares as bigint)} yrUSDC
               </span>
             </div>
           )}
@@ -933,7 +753,7 @@ export default function Positions() {
           </button>
 
           {/* Allowlist hint */}
-          {isConnected && !isAllowed && (
+          {isConnected && allowlistEnabled && !isAllowed && (
             <p className="text-[10px] text-[#434844]/60 text-center">
               Deposits require allowlist membership. Redeems are open to all shareholders.
             </p>
@@ -995,7 +815,7 @@ export default function Positions() {
                 onChange={e => { setRedeemAmt(e.target.value); setRedeemErr(''); resetRedeem() }}
                 className="flex-1 bg-transparent text-2xl font-semibold text-[#1b1c1a] outline-none placeholder:text-[#434844]/20 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
               />
-              <span className="text-[#434844] font-semibold text-sm">yrCORE</span>
+              <span className="text-[#434844] font-semibold text-sm">yrUSDC</span>
               <button
                 onClick={handleMaxRedeem}
                 className="text-[10px] font-bold text-[#715a3e] bg-[#715a3e]/8 px-2 py-0.5 rounded hover:bg-[#715a3e]/15 transition-colors"
@@ -1005,7 +825,7 @@ export default function Positions() {
             </div>
             <p className="text-xs text-[#434844]/70">
               Balance: <span className="font-semibold text-[#434844]">
-                {isConnected ? `${fmtShares(fbUsdcBalance)} yrCORE` : '—'}
+                {isConnected ? `${fmtShares(fbUsdcBalance)} yrUSDC` : '—'}
               </span>
             </p>
           </div>
@@ -1053,7 +873,7 @@ export default function Positions() {
           {/* Locked shares note */}
           {isConnected && lockedShares > 0n && (
             <p className="text-[10px] text-[#434844]/60 text-center">
-              {fmtShares(lockedShares)} yrCORE is locked · go to Locks to manage
+              {fmtShares(lockedShares)} yrUSDC is locked · go to Locks to manage
             </p>
           )}
         </div>

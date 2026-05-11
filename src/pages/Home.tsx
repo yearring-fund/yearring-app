@@ -11,7 +11,7 @@ import {
 } from 'wagmi'
 import { injected } from 'wagmi/connectors'
 import { formatUnits, type Address } from 'viem'
-import { ADDR, VAULT_ABI, AAVE_POOL_ABI, AAVE_V3_POOL_BASE, LEDGER_ABI } from '../lib/contracts'
+import { ADDR, VAULT_ABI, LOCK_MGR_ABI, AAVE_POOL_ABI, AAVE_V3_POOL_BASE } from '../lib/contracts'
 
 // ── Design tokens (Private Atelier palette) ────────────────────────────────
 // primary       #18281e   primary-container #2d3e33   on-primary-container #96a99b
@@ -238,25 +238,26 @@ export default function Home() {
   const { data: reads } = useReadContracts({
     contracts: [
       {
-        address: ADDR.YearRingCoreVaultV01 as Address,
+        address: ADDR.YearRingCoreVaultV21 as Address,
         abi: VAULT_ABI,
         functionName: 'balanceOf',
         args: [address ?? '0x0000000000000000000000000000000000000000'],
       },
       {
-        address: ADDR.YearRingCoreVaultV01 as Address,
+        address: ADDR.YearRingCoreVaultV21 as Address,
         abi: VAULT_ABI,
         functionName: 'totalAssets',
       },
       {
-        address: ADDR.YearRingCoreVaultV01 as Address,
+        address: ADDR.YearRingCoreVaultV21 as Address,
         abi: VAULT_ABI,
         functionName: 'systemMode',
       },
       {
-        address: ADDR.YearRingCoreVaultV01 as Address,
+        address: ADDR.YearRingCoreVaultV21 as Address,
         abi: VAULT_ABI,
-        functionName: 'pricePerShare',
+        functionName: 'convertToAssets',
+        args: [1000000000000000000n],
       },
     ],
   })
@@ -266,37 +267,39 @@ export default function Home() {
   const systemModeNum = reads?.[2]?.result !== undefined ? Number(reads[2].result) : undefined
   const pricePerShare = (reads?.[3]?.result as bigint) ?? 0n
 
-  // Locked shares
+  // Locked shares — V21 uses paginated getUserLockIds + getLock per lock
   const { data: lockIdsRaw } = useReadContract({
-    address: ADDR.LockLedgerV02 as Address,
-    abi: LEDGER_ABI,
-    functionName: 'userLockIds',
-    args: [address ?? '0x0000000000000000000000000000000000000000'],
+    address: ADDR.LockManagerV21 as Address,
+    abi: LOCK_MGR_ABI,
+    functionName: 'getUserLockIds',
+    args: [address ?? '0x0000000000000000000000000000000000000000', 0n, 1000n],
     query: { enabled: isConnected && !!address },
   })
-  const lockIds = (lockIdsRaw as bigint[] | undefined) ?? []
+  // getUserLockIds returns (uint256[] lockIds, uint256 total) — extract first element
+  const lockIds = ((lockIdsRaw as [bigint[], bigint] | undefined)?.[0]) ?? []
 
   const { data: lockReads } = useReadContracts({
     contracts: lockIds.map(id => ({
-      address: ADDR.LockLedgerV02 as Address,
-      abi: LEDGER_ABI,
+      address: ADDR.LockManagerV21 as Address,
+      abi: LOCK_MGR_ABI,
       functionName: 'getLock',
       args: [id],
     })),
     query: { enabled: lockIds.length > 0 },
   })
 
+  // LockStatus.Active = 1; yrUSDCAmount replaces shares
   const lockedShares: bigint = (lockReads ?? []).reduce((sum, r) => {
-    const lock = r.result as { shares: bigint; unlocked: boolean; earlyExited: boolean } | undefined
-    if (!lock || lock.unlocked || lock.earlyExited) return sum
-    return sum + lock.shares
+    const lock = r.result as { yrUSDCAmount: bigint; status: number } | undefined
+    if (!lock || lock.status !== 1) return sum
+    return sum + lock.yrUSDCAmount
   }, 0n)
 
   const totalShares = userShares + lockedShares
 
   // Convert to USDC
   const { data: holdingsRaw } = useReadContract({
-    address: ADDR.YearRingCoreVaultV01 as Address,
+    address: ADDR.YearRingCoreVaultV21 as Address,
     abi: VAULT_ABI,
     functionName: 'convertToAssets',
     args: [totalShares > 0n ? totalShares : 1000000000000n],
@@ -352,9 +355,9 @@ export default function Home() {
 
       const [deposits, redeems] = await Promise.all([
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        publicClient.getLogs({ address: ADDR.YearRingCoreVaultV01 as Address, topics: [TRANSFER_SIG, ZERO, padded],   fromBlock: from, toBlock: 'latest' } as any),
+        publicClient.getLogs({ address: ADDR.YearRingCoreVaultV21 as Address, topics: [TRANSFER_SIG, ZERO, padded],   fromBlock: from, toBlock: 'latest' } as any),
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        publicClient.getLogs({ address: ADDR.YearRingCoreVaultV01 as Address, topics: [TRANSFER_SIG, padded, ZERO],   fromBlock: from, toBlock: 'latest' } as any),
+        publicClient.getLogs({ address: ADDR.YearRingCoreVaultV21 as Address, topics: [TRANSFER_SIG, padded, ZERO],   fromBlock: from, toBlock: 'latest' } as any),
       ])
 
       const raw: ActivityItem[] = [
@@ -743,7 +746,7 @@ export default function Home() {
                 </div>
               </div>
               <div className="pt-4 flex items-center gap-3 flex-wrap" style={{ borderTop: '1px solid #e8e8e2' }}>
-                <a href={`https://basescan.org/address/${ADDR.YearRingCoreVaultV01}`}
+                <a href={`https://basescan.org/address/${ADDR.YearRingCoreVaultV21}`}
                   target="_blank" rel="noopener"
                   className="text-[10px] font-bold text-[#715a3e] hover:underline flex items-center gap-0.5">
                   BaseScan ↗
@@ -816,7 +819,7 @@ export default function Home() {
                     {
                       icon: 'account_balance_wallet',
                       label: 'Available',
-                      sub: 'Liquid yrCORE',
+                      sub: 'Liquid yrUSDC',
                       value: isConnected
                         ? balanceVisible
                           ? `$${fmtUSD(Number(formatUnits((reads?.[0]?.result as bigint) ?? 0n, 18)) * (pps || 1))}`

@@ -24,15 +24,15 @@ const BOTTOM_NAV = [
 function truncate(addr: string) { return addr.slice(0, 6) + '…' + addr.slice(-4) }
 
 const CONTRACTS = [
-  { name: 'Core Vault',                  key: 'YearRingCoreVaultV01'       },
-  { name: 'Lock Ledger',                 key: 'LockLedgerV02'              },
-  { name: 'Lock Points Rebate Manager',  key: 'LockPointsRebateManagerV02' },
-  { name: 'Lock Benefit',                key: 'LockBenefitV02'             },
-  { name: 'Beneficiary Module',          key: 'BeneficiaryModuleV02'       },
-  { name: 'Points Token',                key: 'PointsToken'                },
-  { name: 'Strategy Manager',            key: 'StrategyManagerV01'         },
-  { name: 'Metrics Layer',               key: 'MetricsLayerV02'            },
-  { name: 'Governance Signal',           key: 'GovernanceSignalV02'        },
+  { name: 'Core Vault',                  key: 'YearRingCoreVaultV21'      },
+  { name: 'Lock Manager',                key: 'LockManagerV21'            },
+  { name: 'Core Strategy Manager',       key: 'CoreStrategyManagerV21'    },
+  { name: 'Rebate Manager',              key: 'RebateManagerV21'          },
+  { name: 'Portfolio Lens',              key: 'PortfolioLensV21'          },
+  { name: 'Access Strategy Manager',     key: 'AccessStrategyManagerV21'  },
+  { name: 'Points Ledger',               key: 'PointsLedgerV01'           },
+  { name: 'Treasury',                    key: 'TreasuryV21'               },
+  { name: 'Eligibility Module',          key: 'EligibilityModuleV21'      },
 ] as const
 
 function shortAddr(addr: string) {
@@ -313,7 +313,7 @@ export default function Settings() {
           <div style={{ height: '1px', background: '#e8e8e2' }} />
           <div className="flex items-center flex-wrap gap-x-4 gap-y-2 pt-1">
             <a
-              href={`https://basescan.org/address/${ADDR.YearRingCoreVaultV01}`}
+              href={`https://basescan.org/address/${ADDR.YearRingCoreVaultV21}`}
               target="_blank"
               rel="noreferrer"
               className="flex items-center gap-1 text-xs text-[#434844]/50 hover:text-[#434844] transition-colors"
