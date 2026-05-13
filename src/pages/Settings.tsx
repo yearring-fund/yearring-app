@@ -300,7 +300,7 @@ export default function Settings() {
         <div className="p-5 space-y-3">
           {[
             ['Protocol',  'YearRing Fund'],
-            ['Version',   'V02'],
+            ['Version',   'V2.1 Beta'],
             ['Network',   'Base Mainnet · Chain ID 8453'],
             ['License',   'BUSL-1.1 with Additional Use Grant'],
             ['Audit',     'In preparation · Allowlist active'],

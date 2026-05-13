@@ -235,7 +235,7 @@ export default function Home() {
   const [balanceVisible, setBalanceVisible] = useState(false)
 
   // ── On-chain reads ────────────────────────────────────────────────────────
-  const { data: reads } = useReadContracts({
+  const { data: reads, error: readsError } = useReadContracts({
     contracts: [
       {
         address: ADDR.YearRingCoreVaultV21 as Address,
@@ -733,10 +733,10 @@ export default function Home() {
                   {[
                     { label: 'Strategy',   value: 'Aave V3 · USDC' },
                     { label: 'Network',    value: 'Base Mainnet' },
-                    { label: 'PPS',        value: pricePerShare > 0n ? Number(formatUnits(pricePerShare, 6)).toFixed(6) : '—' },
+                    { label: 'PPS',        value: readsError ? 'Load error' : pricePerShare > 0n ? Number(formatUnits(pricePerShare, 6)).toFixed(6) : '—' },
                     { label: 'APR (est.)', value: aprDecimal > 0 ? `${(aprDecimal * 100).toFixed(2)}%` : '—' },
-                    { label: 'Protocol TVL', value: totalAssets > 0n ? `$${fmtUSD(Number(formatUnits(totalAssets, 6)))}` : '—' },
-                    { label: 'Governance', value: '24h Timelock' },
+                    { label: 'Protocol TVL', value: readsError ? 'Load error' : totalAssets > 0n ? `$${fmtUSD(Number(formatUnits(totalAssets, 6)))}` : '—' },
+                    { label: 'Governance', value: 'Hardening planned' },
                   ].map(({ label, value }) => (
                     <div key={label} className="flex items-center justify-between text-xs">
                       <span className="text-[#434844]/50">{label}</span>
@@ -782,9 +782,9 @@ export default function Home() {
               { label: 'Strategy',     value: 'Aave V3'       },
               { label: 'Network',      value: 'Base'          },
               { label: 'Custody',      value: 'Non-custodial' },
-              { label: 'Governance',   value: '24h Timelock', dot: '#18281e' },
+              { label: 'Governance',   value: 'Hardening planned', dot: '#715a3e' },
               { label: 'APR (est.)',   value: aprDecimal > 0 ? `${(aprDecimal * 100).toFixed(2)}%` : '—' },
-              { label: 'Protocol TVL', value: totalAssets > 0n ? `$${fmtUSD(Number(formatUnits(totalAssets, 6)))}` : '—' },
+              { label: 'Protocol TVL', value: readsError ? 'Load error' : totalAssets > 0n ? `$${fmtUSD(Number(formatUnits(totalAssets, 6)))}` : '—' },
             ] as { label: string; value: string; dot?: string }[]).map(({ label, value, dot }) => (
               <div key={label} className="flex items-center gap-1.5 flex-shrink-0">
                 {dot && <span className="w-1.5 h-1.5 rounded-full" style={{ background: dot }} />}
@@ -895,8 +895,8 @@ export default function Home() {
                 </p>
                 <div className="space-y-2 mb-4">
                   {([
-                    { label: 'Timelock',       value: '24h delay · active',    ok: true  },
-                    { label: 'Emergency exit', value: 'Always available',       ok: true  },
+                    { label: 'Governance',     value: 'Hardening planned',      ok: false },
+                    { label: 'Emergency Mode', value: 'Defined in V2.1',        ok: true  },
                     { label: 'Source code',    value: 'Open source · GitHub',   ok: true  },
                     { label: 'Audit',          value: 'In preparation',         ok: false },
                   ] as { label: string; value: string; ok: boolean }[]).map(({ label, value, ok }) => (
@@ -1012,7 +1012,7 @@ export default function Home() {
       <footer className="bg-[#f5f3ef] py-10">
         <div className="flex flex-col md:flex-row justify-between items-center px-12 max-w-7xl mx-auto gap-4">
           <p className="text-xs uppercase tracking-widest text-[#434844]">
-            © 2024 YearRing Fund. All rights reserved.
+            © 2024–2026 YearRing Fund. All rights reserved.
           </p>
           <div className="flex gap-6">
             {['Privacy', 'Terms', 'Security'].map(l => (

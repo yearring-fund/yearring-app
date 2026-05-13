@@ -164,10 +164,10 @@ function StructureFlow({ reservePct }: { reservePct: number }) {
           style={{ background: 'rgba(24,40,30,0.03)', border: '1px solid rgba(24,40,30,0.07)' }}>
           <span className="material-symbols-outlined text-sm text-[#18281e]">shield</span>
           <p className="text-[9px] text-[#434844]/55 leading-relaxed flex-1">
-            Emergency exit is active at all system states. All shareholders may claim pro-rata USDC
-            regardless of strategy liquidity or governance status.
+            Emergency Mode may temporarily freeze deposits and withdrawals while accounting, liquidity,
+            or strategy risk is reviewed. Emergency controls are defined in the V2.1 contracts.
           </p>
-          <span className="text-[9px] font-bold text-[#18281e] flex-shrink-0">Protected</span>
+          <span className="text-[9px] font-bold text-[#18281e] flex-shrink-0">On-chain</span>
         </div>
       </div>
     </div>
@@ -575,7 +575,7 @@ export default function Positions() {
                     {fmtPoints(pointsBalance)}
                   </p>
                 )}
-                <p className="text-[10px] text-white/40">YRPTS · closed beta points</p>
+                <p className="text-[10px] text-white/40">Points · closed beta</p>
               </div>
             )}
           </div>
@@ -625,7 +625,7 @@ export default function Positions() {
           style={{ background: '#fdf8f3', border: '1px solid #715a3e30' }}>
           <span className="material-symbols-outlined text-base text-[#715a3e] shrink-0">info</span>
           <span className="text-[#715a3e]">
-            Your address is not on the allowlist. Deposits are restricted — redeems remain open to all shareholders.
+            Your address is not on the allowlist. Deposits are restricted. Normal redemptions remain available to shareholders while the system is not in Emergency Mode.
           </span>
         </div>
       )}
@@ -669,8 +669,8 @@ export default function Positions() {
                 ['Strategy',      'Aave V3'],
                 ['Share token',   'yrUSDC · ERC-4626'],
                 ['Custody',       'Non-custodial'],
-                ['Governance',    '24h Timelock on all admin ops'],
-                ['Exit',          'Emergency exit always available'],
+                ['Governance',    'Hardening planned · V2.1 beta'],
+                ['Exit',          'Emergency Mode: risk-control state'],
                 ['Audit status',  'In preparation · Allowlist active'],
               ] as [string, string][]).map(([k, v]) => (
                 <div key={k} className="flex items-center justify-between px-3 py-1.5"
@@ -801,7 +801,7 @@ export default function Positions() {
               </div>
               <div className="flex items-center justify-between px-3 py-1.5">
                 <span className="text-[10px] text-[#434844]/45 font-semibold">Emergency exit</span>
-                <span className="text-[10px] font-bold text-[#18281e]">Always available</span>
+                <span className="text-[10px] font-bold text-[#18281e]">Defined in V2.1</span>
               </div>
             </div>
           </div>

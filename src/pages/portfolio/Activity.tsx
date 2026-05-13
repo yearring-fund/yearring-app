@@ -248,7 +248,7 @@ export default function Activity() {
     ? `Current balance: ${fmtShares(yrUSDCBal)} yrUSDC · ≈ $${fmtUSDC(usdcEquiv)} USDC`
     : undefined
   const ptsSubtitle = isConnected
-    ? `Current balance: ${fmtPoints(ptsBal)} YRPTS`
+    ? `Current balance: ${fmtPoints(ptsBal)} Points`
     : undefined
 
   // ── yrUSDC log state ──────────────────────────────────────────────────
@@ -463,7 +463,7 @@ export default function Activity() {
       {/* ── Points Section ───────────────────────────────────────────────── */}
       <section>
         <SectionHeader
-          title="Points (YRPTS)"
+          title="Points"
           icon="star"
           count={ptItems.length}
           accent="#715a3e"
