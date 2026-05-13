@@ -793,7 +793,7 @@ export default function Home() {
               </div>
             ))}
             <div className="ml-auto flex-shrink-0 flex items-center gap-3">
-              <a href="https://basescan.org/address/0x9dD61ee543a9C51aBe7B26A89687C9aEeea98a54"
+              <a href="https://basescan.org/address/0x53e45AcB32aCD80F3d215a007fD8FE87390746F8"
                 target="_blank" rel="noopener"
                 className="text-[9px] font-bold text-[#715a3e] hover:underline">
                 Verify on BaseScan ↗
@@ -911,7 +911,7 @@ export default function Home() {
                   ))}
                 </div>
                 <div className="flex items-center gap-3 pt-3" style={{ borderTop: '1px solid #f0f0ec' }}>
-                  <a href="https://basescan.org/address/0x9dD61ee543a9C51aBe7B26A89687C9aEeea98a54"
+                  <a href="https://basescan.org/address/0x53e45AcB32aCD80F3d215a007fD8FE87390746F8"
                     target="_blank" rel="noopener"
                     className="text-[10px] font-bold text-[#715a3e] hover:underline">
                     BaseScan ↗
