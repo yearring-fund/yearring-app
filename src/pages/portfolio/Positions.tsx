@@ -88,7 +88,7 @@ function ModeBadge({ mode }: { mode: number | undefined }) {
   const cfg: Record<number, { label: string; color: string; dot: string }> = {
     0: { label: 'Normal',        color: 'bg-[#18281e]/8 text-[#18281e]',    dot: 'bg-[#18281e]'  },
     1: { label: 'Paused',        color: 'bg-amber-100 text-amber-800',       dot: 'bg-amber-500'  },
-    2: { label: 'Emergency Exit',color: 'bg-red-50 text-red-700',            dot: 'bg-red-500'    },
+    2: { label: 'Emergency Mode',color: 'bg-red-50 text-red-700',            dot: 'bg-red-500'    },
   }
   const c = cfg[mode] ?? cfg[0]
   return (
@@ -182,11 +182,11 @@ function EmergencyExitPanel(_props: { fbUsdcBalance: bigint }) {
     <div className="rounded-xl overflow-hidden" style={{ border: '1px solid #fca5a5' }}>
       <div className="px-5 py-3 flex items-center gap-2" style={{ background: '#dc2626' }}>
         <span className="material-symbols-outlined text-white text-lg">emergency</span>
-        <span className="text-white font-bold text-xs tracking-widest uppercase">Emergency Exit Mode</span>
+        <span className="text-white font-bold text-xs tracking-widest uppercase">Emergency Mode</span>
       </div>
       <div className="px-5 py-4 space-y-3" style={{ background: '#fef2f2' }}>
         <p className="text-xs text-red-800 leading-relaxed">
-          The vault is in Emergency Exit mode. All deposits and redeems are suspended pending resolution by the protocol admin.
+          The vault is in Emergency Mode. All deposits and redeems are suspended pending resolution by the protocol admin.
         </p>
         <p className="text-xs text-red-700">
           Contact <a href="mailto:hello@yearringfund.com" className="underline font-semibold">hello@yearringfund.com</a> for status updates.
@@ -478,7 +478,7 @@ export default function Positions() {
 
   const redeemBtn = (() => {
     if (!isConnected)         return { label: 'Connect Wallet',    disabled: true }
-    if (systemModeNum === 2)  return { label: 'Use Emergency Exit', disabled: true }
+    if (systemModeNum === 2)  return { label: 'Emergency Mode Active', disabled: true }
     if (systemModeNum === 1)  return { label: 'Protocol Paused',   disabled: true }
     if (redeemsPaused)        return { label: 'Redeems Paused',    disabled: true }
     if (parsedRedeem === 0n)  return { label: 'Enter Amount',      disabled: true }
@@ -800,7 +800,7 @@ export default function Positions() {
                 <span className="text-[10px] font-bold text-[#1b1c1a]">USDC · to your wallet</span>
               </div>
               <div className="flex items-center justify-between px-3 py-1.5">
-                <span className="text-[10px] text-[#434844]/45 font-semibold">Emergency exit</span>
+                <span className="text-[10px] text-[#434844]/45 font-semibold">Emergency Mode</span>
                 <span className="text-[10px] font-bold text-[#18281e]">Defined in V2.1</span>
               </div>
             </div>

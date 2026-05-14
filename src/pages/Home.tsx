@@ -716,7 +716,7 @@ export default function Home() {
                     const cfg: Record<number, { label: string; dot: string; bg: string; text: string }> = {
                       0: { label: 'Normal',         dot: '#18281e',  bg: '#18281e14', text: '#18281e' },
                       1: { label: 'Paused',         dot: '#d97706',  bg: '#fef3c7',  text: '#92400e' },
-                      2: { label: 'Emergency Exit', dot: '#dc2626',  bg: '#fef2f2',  text: '#dc2626' },
+                      2: { label: 'Emergency Mode', dot: '#dc2626',  bg: '#fef2f2',  text: '#dc2626' },
                     }
                     const c = cfg[mode] ?? cfg[0]
                     return (

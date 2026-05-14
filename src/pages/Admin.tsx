@@ -580,7 +580,7 @@ function AdminConsole() {
       {/* ── Emergency ─────────────────────────────────────────────────────────── */}
       <Section icon="emergency" title="Emergency">
         <ActionRow
-          label="Emergency Exit Vault"
+          label="Set Emergency Mode"
           description="Set systemMode = 2 (EmergencyExit) — irreversible. Blocks all deposits and redeems until resolved by admin."
         >
           <button
@@ -598,12 +598,12 @@ function AdminConsole() {
           >
             <span className="flex items-center gap-2">
               <span className="material-symbols-outlined text-base">warning</span>
-              Set Emergency Exit
+              Set Emergency Mode
             </span>
           </button>
         </ActionRow>
         <ActionRow
-          label="Emergency Exit Strategy"
+          label="Emergency Control: Strategy"
           description="Force-exit Aave strategy via CoreStrategyManagerV21 — withdraws all funds back to CoreSM"
         >
           <button
