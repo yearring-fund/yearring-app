@@ -1012,7 +1012,7 @@ export default function Home() {
       <footer className="bg-[#f5f3ef] py-10">
         <div className="flex flex-col md:flex-row justify-between items-center px-12 max-w-7xl mx-auto gap-4">
           <p className="text-xs uppercase tracking-widest text-[#434844]">
-            © 2024–2026 YearRing Fund. All rights reserved.
+            © 2025–2026 YearRing Fund. All rights reserved.
           </p>
           <div className="flex gap-6">
             {['Privacy', 'Terms', 'Security'].map(l => (
