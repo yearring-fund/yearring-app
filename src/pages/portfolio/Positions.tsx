@@ -1,0 +1,888 @@
+import { useState, useEffect } from 'react'
+import { useLocation } from 'react-router-dom'
+import {
+  useAccount,
+  usePublicClient,
+  useReadContracts,
+  useReadContract,
+  useWriteContract,
+  useWaitForTransactionReceipt,
+} from 'wagmi'
+import { keepPreviousData } from '@tanstack/react-query'
+import { parseUnits, formatUnits, type Address } from 'viem'
+import {
+  ADDR, VAULT_ABI, USDC_ABI, LOCK_MGR_ABI, CORE_SM_ABI, POINTS_ABI, AAVE_POOL_ABI, AAVE_V3_POOL_BASE,
+} from '../../lib/contracts'
+import { parseTxError, parseReadError } from '../../lib/txError'
+import { Sk } from '../../components/ui/Skeleton'
+
+// ── PPS Sparkline ──────────────────────────────────────────────────────────
+const PPS_KEY = 'yearring_pps_history'
+const MAX_PTS = 30
+type PpsPoint = { t: number; v: number }
+function loadPps(): PpsPoint[] {
+  try { return JSON.parse(localStorage.getItem(PPS_KEY) ?? '[]') } catch { return [] }
+}
+function savePps(pts: PpsPoint[]) {
+  localStorage.setItem(PPS_KEY, JSON.stringify(pts.slice(-MAX_PTS)))
+}
+function Sparkline({ points }: { points: PpsPoint[] }) {
+  if (points.length < 2) return (
+    <span className="text-[11px] text-white/30 italic">Accumulating…</span>
+  )
+  const W = 120, H = 32
+  const vals = points.map(p => p.v)
+  const min = Math.min(...vals), max = Math.max(...vals)
+  const range = max - min || 0.000001
+  const xs = points.map((_, i) => (i / (points.length - 1)) * W)
+  const ys = points.map(p => H - ((p.v - min) / range) * (H - 4) - 2)
+  const d  = xs.map((x, i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${ys[i].toFixed(1)}`).join(' ')
+  const rising = vals[vals.length - 1] >= vals[0]
+  const color  = rising ? '#4ade80' : '#fbbf24'
+  return (
+    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="overflow-visible">
+      <path d={d} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx={xs[xs.length-1]} cy={ys[ys.length-1]} r="2.5" fill={color} />
+    </svg>
+  )
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+function fmtUSDC(n: bigint)  { return Number(formatUnits(n, 6)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }
+function fmtShares(n: bigint){ return Number(formatUnits(n, 18)).toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 }) }
+function fmtPPS(n: bigint)    { return Number(formatUnits(n, 6)).toFixed(6) }
+function fmtPoints(n: bigint){ return Number(formatUnits(n, 18)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }
+
+function safeParse(val: string, decimals: number): bigint {
+  try { return val && Number(val) > 0 ? parseUnits(val, decimals) : 0n }
+  catch { return 0n }
+}
+
+// ── Step indicator ─────────────────────────────────────────────────────────
+function StepDots({ steps, current }: { steps: string[]; current: number }) {
+  return (
+    <div className="flex items-center gap-1 text-[10px]">
+      {steps.map((label, i) => {
+        const idx = i + 1
+        const done    = idx < current
+        const active  = idx === current
+        return (
+          <span key={i} className="flex items-center gap-1">
+            {i > 0 && <span className="text-[#c3c8c2]">›</span>}
+            <span className={`font-bold ${active ? 'text-[#18281e]' : done ? 'text-[#715a3e]' : 'text-[#434844]/30'}`}>
+              {done ? '✓' : idx}
+            </span>
+            <span className={active ? 'text-[#434844]' : done ? 'text-[#715a3e]' : 'text-[#434844]/30'}>
+              {label}
+            </span>
+          </span>
+        )
+      })}
+    </div>
+  )
+}
+
+// ── Mode badge ─────────────────────────────────────────────────────────────
+function ModeBadge({ mode }: { mode: number | undefined }) {
+  if (mode === undefined) return null
+  const cfg: Record<number, { label: string; color: string; dot: string }> = {
+    0: { label: 'Normal',        color: 'bg-[#18281e]/8 text-[#18281e]',    dot: 'bg-[#18281e]'  },
+    1: { label: 'Paused',        color: 'bg-amber-100 text-amber-800',       dot: 'bg-amber-500'  },
+    2: { label: 'Emergency Mode',color: 'bg-red-50 text-red-700',            dot: 'bg-red-500'    },
+  }
+  const c = cfg[mode] ?? cfg[0]
+  return (
+    <span className={`inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full ${c.color}`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${c.dot}`} />
+      {c.label}
+    </span>
+  )
+}
+
+// ── Capital Structure Flow ─────────────────────────────────────────────────
+function StructureFlow({ reservePct }: { reservePct: number }) {
+  type FlowNode = { icon: string; label: string; sub: string; accent: string; bg: string }
+  const nodes: FlowNode[] = [
+    { icon: 'person',          label: 'Depositor',    sub: 'USDC',             accent: '#715a3e', bg: 'rgba(113,90,62,0.07)' },
+    { icon: 'account_balance', label: 'yrUSDC Vault', sub: 'share accounting', accent: '#18281e', bg: 'rgba(24,40,30,0.06)'  },
+    { icon: 'trending_up',     label: 'Aave V3',      sub: 'lending yield',    accent: '#18281e', bg: 'rgba(24,40,30,0.06)'  },
+  ]
+  return (
+    <div className="rounded-xl overflow-hidden" style={{ border: '1px solid #e8e8e2' }}>
+      <div className="px-5 py-2.5 flex items-center justify-between" style={{ background: '#f9f9f6', borderBottom: '1px solid #e8e8e2' }}>
+        <span className="text-[9px] font-bold uppercase tracking-widest text-[#434844]/40">Capital structure</span>
+        <span className="text-[9px] text-[#434844]/30">
+          Non-custodial · Base mainnet{reservePct > 0 ? ` · Reserve ${reservePct.toFixed(1)}% of TVL` : ''}
+        </span>
+      </div>
+      <div className="px-5 py-5" style={{ background: '#fff' }}>
+        <div className="flex items-start gap-0">
+          {nodes.map((node, i) => (
+            <div key={node.label} className="flex items-center flex-1 min-w-0">
+              <div className="flex flex-col items-center gap-1.5 flex-shrink-0">
+                <div className="w-10 h-10 rounded-full flex items-center justify-center"
+                  style={{ background: node.bg, border: `1px solid ${node.accent}22` }}>
+                  <span className="material-symbols-outlined text-sm" style={{ color: node.accent }}>{node.icon}</span>
+                </div>
+                <div className="text-center w-[68px]">
+                  <p className="text-[9px] font-bold text-[#1b1c1a] leading-snug">{node.label}</p>
+                  <p className="text-[8px] text-[#434844]/40">{node.sub}</p>
+                </div>
+              </div>
+              {i < nodes.length - 1 && (
+                <div className="flex-1 flex items-center pb-4 px-1">
+                  <div className="h-px flex-1"
+                    style={{ background: 'repeating-linear-gradient(90deg, #c3c8c2 0, #c3c8c2 4px, transparent 4px, transparent 9px)' }} />
+                  <svg width="6" height="8" viewBox="0 0 6 8" className="flex-shrink-0 mx-0.5">
+                    <path d="M0 1L5 4L0 7" fill="none" stroke="#c3c8c2" strokeWidth="1.2" strokeLinecap="round"/>
+                  </svg>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* Reserve note */}
+        {reservePct > 0 && (
+          <div className="mt-1 flex items-center gap-1.5 pl-[84px]">
+            <div className="w-px h-4" style={{ background: 'repeating-linear-gradient(180deg, #c3c8c2 0, #c3c8c2 3px, transparent 3px, transparent 6px)' }} />
+            <div className="flex items-center gap-1.5">
+              <div className="w-7 h-7 rounded-full flex items-center justify-center"
+                style={{ background: 'rgba(113,90,62,0.06)', border: '1px solid rgba(113,90,62,0.12)' }}>
+                <span className="material-symbols-outlined text-xs" style={{ color: '#715a3e', fontSize: '13px' }}>savings</span>
+              </div>
+              <div>
+                <p className="text-[9px] font-bold text-[#1b1c1a] leading-snug">Reserve Pool</p>
+                <p className="text-[8px] text-[#434844]/40">idle USDC · instant redemption</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Exit path guarantee */}
+        <div className="mt-4 flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg"
+          style={{ background: 'rgba(24,40,30,0.03)', border: '1px solid rgba(24,40,30,0.07)' }}>
+          <span className="material-symbols-outlined text-sm text-[#18281e]">shield</span>
+          <p className="text-[9px] text-[#434844]/55 leading-relaxed flex-1">
+            Emergency Mode may temporarily freeze deposits and withdrawals while accounting, liquidity,
+            or strategy risk is reviewed. Emergency controls are defined in the V2.1 contracts.
+          </p>
+          <span className="text-[9px] font-bold text-[#18281e] flex-shrink-0">On-chain</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Emergency Exit Notice (V2.1) ──────────────────────────────────────────
+// V2.1 vault has no round-based exit mechanism. In EmergencyExit mode,
+// all deposits and redeems are suspended. Contact admin for resolution.
+function EmergencyExitPanel(_props: { fbUsdcBalance: bigint }) {
+  return (
+    <div className="rounded-xl overflow-hidden" style={{ border: '1px solid #fca5a5' }}>
+      <div className="px-5 py-3 flex items-center gap-2" style={{ background: '#dc2626' }}>
+        <span className="material-symbols-outlined text-white text-lg">emergency</span>
+        <span className="text-white font-bold text-xs tracking-widest uppercase">Emergency Mode</span>
+      </div>
+      <div className="px-5 py-4 space-y-3" style={{ background: '#fef2f2' }}>
+        <p className="text-xs text-red-800 leading-relaxed">
+          The vault is in Emergency Mode. All deposits and redeems are suspended pending resolution by the protocol admin.
+        </p>
+        <p className="text-xs text-red-700">
+          Contact <a href="mailto:hello@yearringfund.com" className="underline font-semibold">hello@yearringfund.com</a> for status updates.
+        </p>
+      </div>
+    </div>
+  )
+}
+
+// ── Main component ─────────────────────────────────────────────────────────
+export default function Positions() {
+  const { address, isConnected } = useAccount()
+  const publicClient = usePublicClient()
+  const location = useLocation()
+  const [depositAmt, setDepositAmt] = useState('')
+  const [redeemAmt,  setRedeemAmt]  = useState('')
+  const [depositErr, setDepositErr] = useState('')
+  const [redeemErr,  setRedeemErr]  = useState('')
+  const [ppsHistory, setPpsHistory] = useState<PpsPoint[]>(loadPps)
+
+  // ── Batch reads ──────────────────────────────────────────────────────────
+  const { data: reads, isLoading: readsLoading, error: readsError, refetch: refetchReads } = useReadContracts({
+    contracts: [
+      { address: ADDR.YearRingCoreVaultV21 as Address, abi: VAULT_ABI, functionName: 'balanceOf',      args: [address ?? '0x0000000000000000000000000000000000000000'] },
+      { address: ADDR.YearRingCoreVaultV21 as Address, abi: VAULT_ABI, functionName: 'totalAssets' },
+      { address: ADDR.USDC         as Address, abi: USDC_ABI,  functionName: 'balanceOf',      args: [address ?? '0x0000000000000000000000000000000000000000'] },
+      { address: ADDR.USDC         as Address, abi: USDC_ABI,  functionName: 'allowance',      args: [address ?? '0x0000000000000000000000000000000000000000', ADDR.YearRingCoreVaultV21 as Address] },
+      // V21: no depositsPaused/redeemsPaused; use systemMode (0=Normal, 1=Paused, 2=EmergencyExit)
+      { address: ADDR.YearRingCoreVaultV21 as Address, abi: VAULT_ABI, functionName: 'systemMode' },
+      // V21: allowlist(address) replaces isAllowed(address)
+      { address: ADDR.YearRingCoreVaultV21 as Address, abi: VAULT_ABI, functionName: 'allowlist',      args: [address ?? '0x0000000000000000000000000000000000000000'] },
+      // V21: convertToAssets(1e18) gives price per share (USDC 6-dec per yrUSDC)
+      { address: ADDR.YearRingCoreVaultV21 as Address, abi: VAULT_ABI, functionName: 'convertToAssets', args: [1000000000000000000n] },
+      // V21: allowlistEnabled state
+      { address: ADDR.YearRingCoreVaultV21 as Address, abi: VAULT_ABI, functionName: 'allowlistEnabled' },
+    ],
+    query: { refetchInterval: 30_000, placeholderData: keepPreviousData },
+  })
+
+  const fbUsdcBalance  = (reads?.[0]?.result as bigint) ?? 0n
+  const totalAssets    = (reads?.[1]?.result as bigint) ?? 0n
+  const usdcBalance    = (reads?.[2]?.result as bigint) ?? 0n
+  const usdcAllowance  = (reads?.[3]?.result as bigint) ?? 0n
+  const systemModeNum  = reads?.[4]?.result !== undefined ? Number(reads[4].result) : undefined
+  // V21: systemMode 2=EmergencyExit blocks redeems
+  const redeemsPaused  = systemModeNum === 2
+  const isAllowed      = isConnected ? ((reads?.[5]?.result as boolean) ?? false) : false
+  const pps            = (reads?.[6]?.result as bigint) ?? 0n
+  const allowlistEnabled = (reads?.[7]?.result as boolean) ?? true
+  // V21 has no mgmtFeeBpsPerMonth; fee accrues in CoreStrategyManagerV21 at 50bps/year
+  const mgmtFeeBps: bigint | undefined = undefined
+
+  // ── Locked shares (V21 — paginated getUserLockIds) ──────────────────────
+  const { data: lockIdsRaw } = useReadContract({
+    address: ADDR.LockManagerV21 as Address, abi: LOCK_MGR_ABI,
+    functionName: 'getUserLockIds',
+    args: [address ?? '0x0000000000000000000000000000000000000000', 0n, 1000n],
+    query: { enabled: isConnected && !!address, placeholderData: keepPreviousData },
+  })
+  const lockIds = ((lockIdsRaw as [bigint[], bigint] | undefined)?.[0]) ?? []
+
+  const { data: lockReads } = useReadContracts({
+    contracts: lockIds.map(id => ({
+      address: ADDR.LockManagerV21 as Address, abi: LOCK_MGR_ABI,
+      functionName: 'getLock', args: [id],
+    })),
+    query: { enabled: lockIds.length > 0, placeholderData: keepPreviousData },
+  })
+
+  // LockStatus.Active = 1; field is yrUSDCAmount (not shares)
+  const lockedShares: bigint = (lockReads ?? []).reduce((sum, r) => {
+    const lock = r.result as { yrUSDCAmount: bigint; status: number } | undefined
+    if (!lock || lock.status !== 1) return sum
+    return sum + lock.yrUSDCAmount
+  }, 0n)
+
+  // ── USDC equivalents — batched into a single multicall ───────────────────
+  const totalShares = fbUsdcBalance + lockedShares
+
+  const { data: usdcEquivReads } = useReadContracts({
+    contracts: [
+      { address: ADDR.YearRingCoreVaultV21 as Address, abi: VAULT_ABI, functionName: 'convertToAssets', args: [totalShares   > 0n ? totalShares   : 1_000_000_000_000n] },
+      { address: ADDR.YearRingCoreVaultV21 as Address, abi: VAULT_ABI, functionName: 'convertToAssets', args: [lockedShares  > 0n ? lockedShares  : 1_000_000_000_000n] },
+      { address: ADDR.YearRingCoreVaultV21 as Address, abi: VAULT_ABI, functionName: 'convertToAssets', args: [fbUsdcBalance > 0n ? fbUsdcBalance : 1_000_000_000_000n] },
+    ],
+    query: { placeholderData: keepPreviousData },
+  })
+
+  const holdingsUSDC = isConnected && totalShares   > 0n ? (usdcEquivReads?.[0]?.result as bigint | undefined) ?? 0n : 0n
+  const lockedUSDC   = isConnected && lockedShares  > 0n ? (usdcEquivReads?.[1]?.result as bigint | undefined) ?? 0n : 0n
+  const freeUSDC     = isConnected && fbUsdcBalance > 0n ? (usdcEquivReads?.[2]?.result as bigint | undefined) ?? 0n : 0n
+
+  // ── Aave APR ─────────────────────────────────────────────────────────────
+  const { data: aaveReserveData } = useReadContract({
+    address: AAVE_V3_POOL_BASE as Address, abi: AAVE_POOL_ABI,
+    functionName: 'getReserveData', args: [ADDR.USDC as Address],
+    query: { placeholderData: keepPreviousData },
+  })
+  const aprPct = (() => {
+    if (!aaveReserveData) return undefined
+    const rate = (aaveReserveData as { currentLiquidityRate: bigint }).currentLiquidityRate
+    if (!rate) return undefined
+    return (Number((rate * 10000n) / 1_000_000_000_000_000_000_000_000_000n) / 100).toFixed(2)
+  })()
+
+  // ── Strategy stats (V21 CoreStrategyManagerV21) ──────────────────────────
+  const { data: stratDeployedRaw } = useReadContract({
+    address: ADDR.CoreStrategyManagerV21 as Address, abi: CORE_SM_ABI,
+    functionName: 'totalManagedAssets',
+    query: { placeholderData: keepPreviousData },
+  })
+  const stratDeployed = (stratDeployedRaw as bigint | undefined) ?? 0n
+  const reserveUSDC   = totalAssets > stratDeployed ? totalAssets - stratDeployed : 0n
+  const reserveRatioPct = totalAssets > 0n
+    ? Number((reserveUSDC * 10000n) / totalAssets) / 100
+    : 0
+
+  // ── Points balance (V21 PointsLedgerV01 — no approve/allowance) ──────────
+  const { data: pointsBalRaw } = useReadContract({
+    address: ADDR.PointsLedgerV01 as Address, abi: POINTS_ABI,
+    functionName: 'balanceOf',
+    args: [address ?? '0x0000000000000000000000000000000000000000'],
+    query: { enabled: isConnected && !!address, refetchInterval: 30_000, placeholderData: keepPreviousData },
+  })
+  const pointsBalance = (pointsBalRaw as bigint | undefined) ?? 0n
+
+  // ── PPS history tracking ─────────────────────────────────────────────────
+  useEffect(() => {
+    if (pps === 0n) return
+    const v = Number(formatUnits(pps, 6))
+    setPpsHistory(prev => {
+      const last = prev[prev.length - 1]
+      if (last && Math.abs(last.v - v) < 0.000001) return prev
+      const next = [...prev, { t: Date.now(), v }]
+      savePps(next)
+      return next
+    })
+  }, [pps])
+
+  // ── Seed PPS history from chain on first visit ───────────────────────────
+  // If localStorage has < 2 points, sample pricePerShare() at 7 daily
+  // intervals going back from the current block (Base ~2s/block).
+  useEffect(() => {
+    if (!publicClient) return
+    const stored = loadPps()
+    if (stored.length >= 2) return          // already have history
+
+    const BLOCKS_PER_DAY = 43_200n          // Base: ~2s per block
+    const SAMPLES = 7
+
+    async function seed() {
+      try {
+        const currentBlock = await publicClient!.getBlockNumber()
+        const points: PpsPoint[] = []
+
+        for (let i = SAMPLES - 1; i >= 0; i--) {
+          const blockNumber = currentBlock - BigInt(i) * BLOCKS_PER_DAY
+          if (blockNumber < 0n) continue
+          try {
+            const result = await publicClient!.readContract({
+              address: ADDR.YearRingCoreVaultV21 as Address,
+              abi: VAULT_ABI,
+              functionName: 'convertToAssets',
+              args: [1000000000000000000n],
+              blockNumber,
+            }) as bigint
+            const block = await publicClient!.getBlock({ blockNumber })
+            points.push({
+              t: Number(block.timestamp) * 1000,
+              v: Number(formatUnits(result, 6)),
+            })
+          } catch {
+            // block too early or contract not yet deployed — skip
+          }
+        }
+
+        if (points.length >= 2) {
+          savePps(points)
+          setPpsHistory(points)
+        }
+      } catch {
+        // RPC error — fall back to accumulating normally
+      }
+    }
+
+    seed()
+  }, [publicClient]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Parsed amounts ────────────────────────────────────────────────────────
+  const parsedDeposit = safeParse(depositAmt, 6)
+  const parsedRedeem  = safeParse(redeemAmt,  18)
+
+  // ── Preview reads ─────────────────────────────────────────────────────────
+  const { data: previewShares } = useReadContract({
+    address: ADDR.YearRingCoreVaultV21 as Address, abi: VAULT_ABI,
+    functionName: 'previewDeposit', args: [parsedDeposit],
+    query: { enabled: parsedDeposit > 0n },
+  })
+  const { data: previewUSDC } = useReadContract({
+    address: ADDR.YearRingCoreVaultV21 as Address, abi: VAULT_ABI,
+    functionName: 'previewRedeem', args: [parsedRedeem],
+    query: { enabled: parsedRedeem > 0n },
+  })
+
+  // ── Write: approve ────────────────────────────────────────────────────────
+  const { writeContract: writeApprove, data: approveTxHash, isPending: approvePending, error: approveError, reset: resetApprove } = useWriteContract()
+  const { isLoading: approveConfirming, isSuccess: approveSuccess } = useWaitForTransactionReceipt({ hash: approveTxHash })
+
+  // ── Write: deposit ────────────────────────────────────────────────────────
+  const { writeContract: writeDeposit, data: depositTxHash, isPending: depositPending, error: depositError, reset: resetDeposit } = useWriteContract()
+  const { isLoading: depositConfirming, isSuccess: depositSuccess } = useWaitForTransactionReceipt({ hash: depositTxHash })
+
+  // ── Write: redeem ─────────────────────────────────────────────────────────
+  const { writeContract: writeRedeem, data: redeemTxHash, isPending: redeemPending, error: redeemError, reset: resetRedeem } = useWriteContract()
+  const { isLoading: redeemConfirming, isSuccess: redeemSuccess } = useWaitForTransactionReceipt({ hash: redeemTxHash })
+
+  // ── Derived state ─────────────────────────────────────────────────────────
+  const needsApproval   = parsedDeposit > 0n && usdcAllowance < parsedDeposit
+  const approveInflight = approvePending || approveConfirming
+  const depositInflight = depositPending || depositConfirming
+  const redeemInflight  = redeemPending  || redeemConfirming
+
+  const depositStep = depositSuccess ? 3 : !needsApproval ? 2 : 1
+
+  // ── Handlers ──────────────────────────────────────────────────────────────
+  const handleApprove = () => {
+    setDepositErr('')
+    try {
+      writeApprove({ address: ADDR.USDC as Address, abi: USDC_ABI, functionName: 'approve', args: [ADDR.YearRingCoreVaultV21 as Address, parsedDeposit] })
+    } catch(e) { setDepositErr(parseTxError(e)) }
+  }
+  const handleDeposit = () => {
+    setDepositErr('')
+    try {
+      writeDeposit({ address: ADDR.YearRingCoreVaultV21 as Address, abi: VAULT_ABI, functionName: 'deposit', args: [parsedDeposit, address as Address] })
+    } catch(e) { setDepositErr(parseTxError(e)) }
+  }
+  const handleRedeem = () => {
+    setRedeemErr('')
+    try {
+      writeRedeem({ address: ADDR.YearRingCoreVaultV21 as Address, abi: VAULT_ABI, functionName: 'redeem', args: [parsedRedeem, address as Address, address as Address] })
+    } catch(e) { setRedeemErr(parseTxError(e)) }
+  }
+  const handleMaxRedeem = () => fbUsdcBalance > 0n && setRedeemAmt(formatUnits(fbUsdcBalance, 18))
+
+  // ── Refetch on success ────────────────────────────────────────────────────
+  useEffect(() => {
+    if (approveSuccess || depositSuccess || redeemSuccess) refetchReads()
+    if (depositSuccess) { setDepositAmt(''); resetDeposit() }
+    if (redeemSuccess)  { setRedeemAmt('');  resetRedeem()  }
+  }, [approveSuccess, depositSuccess, redeemSuccess])
+
+  // ── Scroll to panel from hash navigation ──────────────────────────────────
+  useEffect(() => {
+    if (!location.hash) return
+    const id = location.hash.slice(1)
+    const attempt = () => {
+      const el = document.getElementById(id)
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+    // Slight delay so layout is rendered before scrolling
+    const t = setTimeout(attempt, 150)
+    return () => clearTimeout(t)
+  }, [location.hash])
+
+  // ── Error display ─────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (approveError || depositError) setDepositErr(parseTxError(approveError ?? depositError))
+  }, [approveError, depositError])
+  useEffect(() => {
+    if (redeemError) setRedeemErr(parseTxError(redeemError))
+  }, [redeemError])
+
+  // ── Button helpers ────────────────────────────────────────────────────────
+  const depositBtn = (() => {
+    if (!isConnected)                         return { label: 'Connect Wallet',    disabled: true }
+    if (systemModeNum !== 0)                  return { label: 'Deposits Disabled', disabled: true }
+    if (allowlistEnabled && !isAllowed)       return { label: 'Not Allowlisted',   disabled: true }
+    if (parsedDeposit === 0n)  return { label: 'Enter Amount',      disabled: true }
+    if (parsedDeposit > usdcBalance) return { label: 'Insufficient USDC', disabled: true }
+    if (needsApproval) {
+      if (approveInflight) return { label: approveConfirming ? 'Confirming…' : 'Signing…', disabled: true }
+      return { label: 'Approve USDC', disabled: false, action: handleApprove }
+    }
+    if (depositInflight) return { label: depositConfirming ? 'Confirming…' : 'Signing…', disabled: true }
+    if (depositSuccess)  return { label: '✓ Deposited', disabled: true }
+    return { label: 'Deposit', disabled: false, action: handleDeposit }
+  })()
+
+  const redeemBtn = (() => {
+    if (!isConnected)         return { label: 'Connect Wallet',    disabled: true }
+    if (systemModeNum === 2)  return { label: 'Emergency Mode Active', disabled: true }
+    if (systemModeNum === 1)  return { label: 'Protocol Paused',   disabled: true }
+    if (redeemsPaused)        return { label: 'Redeems Paused',    disabled: true }
+    if (parsedRedeem === 0n)  return { label: 'Enter Amount',      disabled: true }
+    if (parsedRedeem > fbUsdcBalance) return { label: 'Insufficient Balance', disabled: true }
+    if (redeemInflight) return { label: redeemConfirming ? 'Confirming…' : 'Signing…', disabled: true }
+    if (redeemSuccess)  return { label: '✓ Redeemed', disabled: true }
+    return { label: 'Redeem yrUSDC', disabled: false, action: handleRedeem }
+  })()
+
+  // ── JSX ───────────────────────────────────────────────────────────────────
+  return (
+    <div className="max-w-7xl mx-auto px-5 md:px-8 py-6 space-y-6">
+
+      {/* ── Hero summary card ──────────────────────────────────────────── */}
+      <section
+        className="relative rounded-xl overflow-hidden px-7 py-6"
+        style={{ background: 'linear-gradient(145deg, #18281e 0%, #2d3e33 100%)' }}
+      >
+        {/* Ring motif */}
+        <div className="absolute inset-0 pointer-events-none opacity-10"
+          style={{
+            backgroundImage: 'radial-gradient(circle at 80% 50%, transparent 30%, rgba(113,90,62,0.15) 31%, transparent 32%)',
+            backgroundSize: '600px 600px', backgroundPosition: 'right center', backgroundRepeat: 'no-repeat',
+          }}
+        />
+
+        <div className="relative z-10 flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+          {/* Left: balance */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold tracking-[0.2em] uppercase text-white/50">
+                Total Portfolio Value
+              </span>
+              <ModeBadge mode={systemModeNum} />
+            </div>
+            {isConnected && readsLoading ? (
+              <div className="space-y-2 pt-1">
+                <div className="animate-pulse h-12 w-52 rounded-xl bg-white/20" />
+                <div className="animate-pulse h-4 w-64 rounded-md bg-white/10" />
+              </div>
+            ) : (
+              <>
+                <h1
+                  className="text-4xl md:text-5xl font-bold tracking-tight text-white"
+                  style={{ fontFamily: "'Noto Serif', serif" }}
+                >
+                  {isConnected ? `$${fmtUSDC(holdingsUSDC)}` : '$—'}
+                </h1>
+                {isConnected && (
+                  <div className="flex items-center gap-4 text-sm">
+                    <span className="text-white/60">
+                      Available <span className="text-white font-semibold">
+                        {freeUSDC > 0n ? `$${fmtUSDC(freeUSDC)}` : '$0.00'}
+                      </span>
+                    </span>
+                    <span className="text-white/30">·</span>
+                    <span className="text-white/60">
+                      Locked <span className="text-[#e0c29f] font-semibold">
+                        {lockedUSDC > 0n ? `$${fmtUSDC(lockedUSDC)}` : '$0.00'}
+                      </span>
+                    </span>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          {/* Right: stats */}
+          <div className="flex flex-wrap gap-6 md:gap-10">
+            {[
+              { label: 'Price per Share', value: pps > 0n ? fmtPPS(pps) : '—', sub: 'yrUSDC / USDC' },
+              { label: 'Current APR',     value: aprPct ? `${aprPct}%` : '—',  sub: 'Aave V3 · Estimated' },
+              { label: 'Total Assets',    value: totalAssets > 0n ? `$${fmtUSDC(totalAssets)}` : '—', sub: 'Protocol TVL' },
+            ].map(({ label, value, sub }) => (
+              <div key={label} className="space-y-1">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-white/40">{label}</p>
+                {readsLoading ? (
+                  <div className="animate-pulse h-6 w-20 rounded-md bg-white/20" />
+                ) : (
+                  <p className="text-lg font-bold text-white" style={{ fontFamily: "'Noto Serif', serif" }}>
+                    {value}
+                  </p>
+                )}
+                <p className="text-[10px] text-white/40">{sub}</p>
+              </div>
+            ))}
+            {isConnected && (
+              <div className="space-y-1 pl-6 md:pl-8" style={{ borderLeft: '1px solid rgba(255,255,255,0.12)' }}>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-white/40">Your Points</p>
+                {readsLoading ? (
+                  <div className="animate-pulse h-6 w-20 rounded-md bg-white/20" />
+                ) : (
+                  <p className="text-lg font-bold text-white" style={{ fontFamily: "'Noto Serif', serif" }}>
+                    {fmtPoints(pointsBalance)}
+                  </p>
+                )}
+                <p className="text-[10px] text-white/40">Points · closed beta</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Protocol stats row ─────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {[
+          { label: 'Strategy Deployed', value: stratDeployed > 0n ? `$${fmtUSDC(stratDeployed)}` : '—', sub: 'In Aave V3' },
+          { label: 'Reserve',           value: reserveUSDC   > 0n ? `$${fmtUSDC(reserveUSDC)}`   : '—', sub: `${reserveRatioPct.toFixed(1)}% of TVL` },
+          { label: 'Mgmt Fee',          value: mgmtFeeBps !== undefined ? `${(Number(mgmtFeeBps) / 100).toFixed(2)}%` : '—', sub: 'PPS dilution / month' },
+          { label: 'PPS Trend',         value: null, sparkline: true },
+        ].map(({ label, value, sub, sparkline }) => (
+          <div key={label} className="rounded-xl px-4 py-3" style={{ background: '#f5f5f0' }}>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-[#434844]/50 mb-1">{label}</p>
+            {sparkline ? (
+              <Sparkline points={ppsHistory} />
+            ) : readsLoading ? (
+              <>
+                <Sk className="h-5 w-20 mb-1" />
+                <Sk className="h-3 w-14" />
+              </>
+            ) : (
+              <>
+                <p className="text-sm font-bold text-[#1b1c1a]" style={{ fontFamily: "'Noto Serif', serif" }}>{value}</p>
+                <p className="text-[10px] text-[#434844]/40 mt-0.5">{sub}</p>
+              </>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* ── Read error banner ───────────────────────────────────────────── */}
+      {readsError && !readsLoading && (
+        <div className="flex items-center gap-2 rounded-xl px-4 py-3 text-xs text-red-600"
+          style={{ background: '#fff1f1', border: '1px solid #fca5a530' }}>
+          <span className="material-symbols-outlined text-base flex-shrink-0">cloud_off</span>
+          <span className="flex-1">{parseReadError(readsError)}</span>
+          <button onClick={() => refetchReads()} className="font-semibold underline flex-shrink-0">Retry</button>
+        </div>
+      )}
+
+      {/* ── Allowlist warning ───────────────────────────────────────────── */}
+      {isConnected && allowlistEnabled && !isAllowed && (
+        <div className="flex items-start gap-2 rounded-xl px-4 py-3 text-xs"
+          style={{ background: '#fdf8f3', border: '1px solid #715a3e30' }}>
+          <span className="material-symbols-outlined text-base text-[#715a3e] shrink-0">info</span>
+          <span className="text-[#715a3e]">
+            Your address is not on the allowlist. Deposits are restricted. Normal redemptions remain available to shareholders while the system is not in Emergency Mode.
+          </span>
+        </div>
+      )}
+
+      {/* ── Capital structure flow ─────────────────────────────────────── */}
+      <StructureFlow reservePct={reserveRatioPct} />
+
+      {/* ── Deposit / Redeem panels ─────────────────────────────────────── */}
+      {!isConnected ? (
+        <div className="rounded-2xl flex flex-col items-center justify-center py-14 text-center space-y-3"
+          style={{ background: '#f5f5f0' }}>
+          <span className="material-symbols-outlined text-4xl text-[#c3c8c2]">account_balance_wallet</span>
+          <div>
+            <p className="text-sm font-semibold text-[#1b1c1a]">Connect your wallet</p>
+            <p className="text-xs text-[#434844]/50 mt-1">to deposit, redeem, or view your position</p>
+          </div>
+        </div>
+      ) : null}
+      <div className={`grid grid-cols-1 md:grid-cols-2 gap-5 ${!isConnected ? 'hidden' : ''}`}>
+
+        {/* ── Deposit ── */}
+        <div id="deposit-panel" className="bg-[#f5f3ef] rounded-xl p-6 space-y-5" style={{ scrollMarginTop: '130px' }}>
+          <h3
+            className="text-lg font-bold text-[#1b1c1a]"
+            style={{ fontFamily: "'Noto Serif', serif" }}
+          >
+            Deposit
+          </h3>
+
+          {/* Position parameters */}
+          <div className="rounded-lg overflow-hidden" style={{ border: '1px solid #e8e8e2' }}>
+            <div className="px-3 py-2" style={{ background: '#f9f9f6', borderBottom: '1px solid #e8e8e2' }}>
+              <span className="text-[9px] font-bold uppercase tracking-widest text-[#434844]/40">
+                You are entering a structured fund container
+              </span>
+            </div>
+            <div style={{ background: '#fff' }}>
+              {([
+                ['Asset',         'USDC'],
+                ['Network',       'Base'],
+                ['Strategy',      'Aave V3'],
+                ['Share token',   'yrUSDC · ERC-4626'],
+                ['Custody',       'Non-custodial'],
+                ['Governance',    'Hardening planned · V2.1 beta'],
+                ['Exit',          'Emergency Mode: risk-control state'],
+                ['Audit status',  'In preparation · Allowlist active'],
+              ] as [string, string][]).map(([k, v]) => (
+                <div key={k} className="flex items-center justify-between px-3 py-1.5"
+                  style={{ borderBottom: '1px solid #f5f5f0' }}>
+                  <span className="text-[10px] text-[#434844]/45 font-semibold">{k}</span>
+                  <span className="text-[10px] font-bold text-[#1b1c1a] text-right">{v}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Input */}
+          <div className="space-y-1">
+            <div className="border-b-2 border-[#c3c8c2] focus-within:border-[#715a3e] transition-colors pb-1.5 flex items-center gap-2">
+              <input
+                type="number" min="0" placeholder="0.00"
+                value={depositAmt}
+                onChange={e => { setDepositAmt(e.target.value); setDepositErr(''); resetApprove() }}
+                className="flex-1 bg-transparent text-2xl font-semibold text-[#1b1c1a] outline-none placeholder:text-[#434844]/20 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              />
+              <span className="text-[#434844] font-semibold text-sm">USDC</span>
+            </div>
+            <p className="text-xs text-[#434844]/70">
+              Balance: <span className="font-semibold text-[#434844]">
+                {isConnected ? `$${fmtUSDC(usdcBalance)}` : '—'}
+              </span>
+            </p>
+          </div>
+
+          {/* Preview */}
+          {parsedDeposit > 0n && previewShares !== undefined && (
+            <div className="bg-white rounded-lg px-4 py-3 flex justify-between items-center">
+              <span className="text-xs text-[#434844]">You receive</span>
+              <span className="text-sm font-bold text-[#18281e]">
+                ≈ {fmtShares(previewShares as bigint)} yrUSDC
+              </span>
+            </div>
+          )}
+
+          {/* Fee note */}
+          {mgmtFeeBps !== undefined && mgmtFeeBps > 0n && (
+            <p className="text-[10px] text-[#434844]/40 leading-relaxed">
+              A {(Number(mgmtFeeBps) / 100).toFixed(2)}%/month management fee is charged by minting new shares to the protocol treasury, which gradually dilutes the price per share (PPS). Your share count is never deducted.
+            </p>
+          )}
+
+          {/* Step indicator */}
+          {isConnected && parsedDeposit > 0n && needsApproval && (
+            <StepDots steps={['Approve', 'Deposit']} current={depositStep} />
+          )}
+
+          {/* Error */}
+          {depositErr && (
+            <p className="text-xs text-red-700 bg-red-50 rounded-lg px-3 py-2">{depositErr}</p>
+          )}
+
+          {/* Status */}
+          {depositSuccess && depositTxHash && (
+            <div className="flex items-center gap-2 text-xs text-[#18281e] bg-[#18281e]/5 rounded-lg px-3 py-2">
+              <span className="material-symbols-outlined text-sm">check_circle</span>
+              <span>Deposit confirmed</span>
+              <a href={`https://basescan.org/tx/${depositTxHash}`} target="_blank" rel="noreferrer" className="ml-auto underline">
+                View
+              </a>
+            </div>
+          )}
+
+          {/* Button */}
+          <button
+            disabled={depositBtn.disabled}
+            onClick={depositBtn.action}
+            className={`w-full py-3.5 rounded-lg font-bold text-sm transition-all active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed ${
+              depositBtn.disabled
+                ? 'bg-[#434844]/10 text-[#434844]'
+                : 'text-white hover:opacity-90'
+            }`}
+            style={!depositBtn.disabled ? { background: 'linear-gradient(135deg, #18281e, #2d3e33)' } : undefined}
+          >
+            {depositBtn.label}
+          </button>
+
+          {/* Allowlist hint */}
+          {isConnected && allowlistEnabled && !isAllowed && (
+            <p className="text-[10px] text-[#434844]/60 text-center">
+              Deposits require allowlist membership. Redeems are open to all shareholders.
+            </p>
+          )}
+        </div>
+
+        {/* ── Redeem ── */}
+        <div id="redeem-panel" className="bg-[#f5f3ef] rounded-xl p-6 space-y-5" style={{ scrollMarginTop: '130px' }}>
+          <h3
+            className="text-lg font-bold text-[#1b1c1a]"
+            style={{ fontFamily: "'Noto Serif', serif" }}
+          >
+            Redeem
+          </h3>
+
+          {/* Exit path status */}
+          <div className="rounded-lg overflow-hidden" style={{ border: '1px solid #e8e8e2' }}>
+            <div className="px-3 py-2 flex items-center justify-between"
+              style={{ background: '#f9f9f6', borderBottom: '1px solid #e8e8e2' }}>
+              <span className="text-[9px] font-bold uppercase tracking-widest text-[#434844]/40">Exit path</span>
+              <ModeBadge mode={systemModeNum} />
+            </div>
+            <div style={{ background: '#fff' }}>
+              <div className="flex items-center justify-between px-3 py-1.5"
+                style={{ borderBottom: '1px solid #f5f5f0' }}>
+                <span className="text-[10px] text-[#434844]/45 font-semibold">Normal redeem</span>
+                <span className="text-[10px] font-bold"
+                  style={{ color: redeemsPaused ? '#dc2626' : '#18281e' }}>
+                  {redeemsPaused ? 'Paused' : 'Available'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between px-3 py-1.5"
+                style={{ borderBottom: '1px solid #f5f5f0' }}>
+                <span className="text-[10px] text-[#434844]/45 font-semibold">Reserve on hand</span>
+                <span className="text-[10px] font-bold text-[#1b1c1a]">
+                  {reserveUSDC > 0n
+                    ? `$${fmtUSDC(reserveUSDC)} · ${reserveRatioPct.toFixed(1)}% of TVL`
+                    : '—'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between px-3 py-1.5"
+                style={{ borderBottom: '1px solid #f5f5f0' }}>
+                <span className="text-[10px] text-[#434844]/45 font-semibold">Asset returned</span>
+                <span className="text-[10px] font-bold text-[#1b1c1a]">USDC · to your wallet</span>
+              </div>
+              <div className="flex items-center justify-between px-3 py-1.5">
+                <span className="text-[10px] text-[#434844]/45 font-semibold">Emergency Mode</span>
+                <span className="text-[10px] font-bold text-[#18281e]">Defined in V2.1</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Input */}
+          <div className="space-y-1">
+            <div className="border-b-2 border-[#c3c8c2] focus-within:border-[#715a3e] transition-colors pb-1.5 flex items-center gap-2">
+              <input
+                type="number" min="0" placeholder="0.0000"
+                value={redeemAmt}
+                onChange={e => { setRedeemAmt(e.target.value); setRedeemErr(''); resetRedeem() }}
+                className="flex-1 bg-transparent text-2xl font-semibold text-[#1b1c1a] outline-none placeholder:text-[#434844]/20 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              />
+              <span className="text-[#434844] font-semibold text-sm">yrUSDC</span>
+              <button
+                onClick={handleMaxRedeem}
+                className="text-[10px] font-bold text-[#715a3e] bg-[#715a3e]/8 px-2 py-0.5 rounded hover:bg-[#715a3e]/15 transition-colors"
+              >
+                MAX
+              </button>
+            </div>
+            <p className="text-xs text-[#434844]/70">
+              Balance: <span className="font-semibold text-[#434844]">
+                {isConnected ? `${fmtShares(fbUsdcBalance)} yrUSDC` : '—'}
+              </span>
+            </p>
+          </div>
+
+          {/* Preview */}
+          {parsedRedeem > 0n && previewUSDC !== undefined && (
+            <div className="bg-white rounded-lg px-4 py-3 flex justify-between items-center">
+              <span className="text-xs text-[#434844]">You receive</span>
+              <span className="text-sm font-bold text-[#18281e]">
+                ≈ ${fmtUSDC(previewUSDC as bigint)} USDC
+              </span>
+            </div>
+          )}
+
+
+          {/* Error */}
+          {redeemErr && (
+            <p className="text-xs text-red-700 bg-red-50 rounded-lg px-3 py-2">{redeemErr}</p>
+          )}
+
+          {/* Status */}
+          {redeemSuccess && redeemTxHash && (
+            <div className="flex items-center gap-2 text-xs text-[#18281e] bg-[#18281e]/5 rounded-lg px-3 py-2">
+              <span className="material-symbols-outlined text-sm">check_circle</span>
+              <span>Redeem confirmed</span>
+              <a href={`https://basescan.org/tx/${redeemTxHash}`} target="_blank" rel="noreferrer" className="ml-auto underline">
+                View
+              </a>
+            </div>
+          )}
+
+          {/* Button */}
+          <button
+            disabled={redeemBtn.disabled}
+            onClick={redeemBtn.action}
+            className={`w-full py-3.5 rounded-lg font-bold text-sm transition-all active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed ${
+              redeemBtn.disabled
+                ? 'bg-[#434844]/10 text-[#434844]'
+                : 'bg-[#18281e] text-white hover:opacity-90'
+            }`}
+          >
+            {redeemBtn.label}
+          </button>
+
+          {/* Locked shares note */}
+          {isConnected && lockedShares > 0n && (
+            <p className="text-[10px] text-[#434844]/60 text-center">
+              {fmtShares(lockedShares)} yrUSDC is locked · go to Locks to manage
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* ── Emergency Exit Panel ───────────────────────────────────────── */}
+      {isConnected && systemModeNum === 2 && (
+        <EmergencyExitPanel fbUsdcBalance={fbUsdcBalance} />
+      )}
+    </div>
+  )
+}
